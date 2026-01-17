@@ -92,57 +92,370 @@ function App() {
     }
   }
 
-  // 计算综合可靠性评估
-  const calculateReliability = (analysis) => {
-    if (!analysis) return { level: 'unknown', label: '无法判断', summary: '' }
+  // ==================== 新架构：三维度可靠性分析 ====================
+  
+  /**
+   * 计算可靠性门控系数 (Reliability Gating)
+   * 返回各维度的可靠性系数 r ∈ [0, 1]
+   */
+  const calculateReliabilityGates = (analysis) => {
+    const gates = {
+      exif: 0.5,      // EXIF可靠性
+      clarity: 1.0,   // 清晰度
+      angle: 1.0,     // 角度可靠性
+      isOriginal: false  // 是否原图
+    }
     
-    let totalScore = 0
-    let factorCount = 0
+    if (!analysis) return gates
     
-    const credibilityItems = analysis.credibility?.items || []
-    credibilityItems.forEach(item => {
+    // === EXIF两段式判断 ===
+    const credibility = analysis.credibility || {}
+    const exifItems = credibility.items?.filter(item => 
+      item.claim?.includes('EXIF') || item.claim?.includes('元数据') || item.claim?.includes('相机')
+    ) || []
+    
+    // 判断是否为原图（有EXIF且一致性高）
+    const hasValidExif = exifItems.some(item => item.confidence === 'high')
+    const hasExifWarning = exifItems.some(item => 
+      item.claim?.includes('缺失') || item.claim?.includes('异常') || item.claim?.includes('修改')
+    )
+    
+    if (hasValidExif && !hasExifWarning) {
+      // 原图可能性高：EXIF权重=1
+      gates.exif = 1.0
+      gates.isOriginal = true
+    } else if (hasExifWarning) {
+      // 有明确的EXIF异常
+      gates.exif = 0.3
+    } else {
+      // 截图/社交压缩：EXIF权重=0（中性，不扣分）
+      gates.exif = 0  // 不参与计算
+      gates.isOriginal = false
+    }
+    
+    // === 清晰度/模糊度门控 ===
+    const details = analysis.details || {}
+    const isBlurry = details.items?.some(item => 
+      item.claim?.includes('模糊') || item.claim?.includes('不清晰')
+    )
+    if (isBlurry) {
+      gates.clarity = 0.5  // 模糊图片降低细节判断能力
+    }
+    
+    // === 角度门控 ===
+    const person = analysis.person || {}
+    const angleImpact = person.evidence?.angle_impact || ''
+    if (angleImpact.includes('影响大')) {
+      gates.angle = 0.6
+    } else if (angleImpact.includes('影响小')) {
+      gates.angle = 1.0
+    } else {
+      gates.angle = 0.8  // 默认中等
+    }
+    
+    return gates
+  }
+  
+  /**
+   * A. 技术真实性分 (Auth-Tech)
+   * 编辑痕迹/AI生成/反搜网图/EXIF一致性
+   */
+  const calculateAuthTech = (analysis, gates) => {
+    let score = 100  // 满分100，扣分制
+    let findings = []
+    let hasEvidence = false
+    
+    const credibility = analysis?.credibility || {}
+    const items = credibility.items || []
+    
+    items.forEach(item => {
+      const claim = item.claim || ''
       const conf = item.confidence
-      let score = conf === 'high' ? 3 : conf === 'medium' ? 2 : 1
-      totalScore += score
-      factorCount++
+      
+      // 编辑痕迹检测
+      if (claim.includes('编辑') || claim.includes('PS') || claim.includes('修改')) {
+        hasEvidence = true
+        if (conf === 'high') {
+          score -= 40
+          findings.push('发现明显编辑痕迹')
+        } else if (conf === 'medium') {
+          score -= 20
+          findings.push('可能存在编辑')
+        }
+      }
+      
+      // AI生成检测
+      if (claim.includes('AI') || claim.includes('生成') || claim.includes('合成')) {
+        hasEvidence = true
+        if (conf === 'high') {
+          score -= 50
+          findings.push('疑似AI生成图片')
+        } else if (conf === 'medium') {
+          score -= 25
+          findings.push('AI生成可能性中等')
+        }
+      }
+      
+      // EXIF一致性（仅在原图时考虑）
+      if (gates.isOriginal && (claim.includes('EXIF') || claim.includes('元数据'))) {
+        hasEvidence = true
+        if (claim.includes('缺失') || claim.includes('异常')) {
+          score -= 15 * gates.exif
+          findings.push('EXIF信息异常')
+        } else if (conf === 'high') {
+          score += 5  // EXIF正常可以微加分
+        }
+      }
     })
     
-    const person = analysis.person || {}
-    if (person.detected) {
-      if (person.confidence === 'high') totalScore += 3
-      else if (person.confidence === 'medium') totalScore += 2
-      else totalScore += 1
-      factorCount++
+    // 如果没有任何证据，给中等分
+    if (!hasEvidence) {
+      score = 70
+      findings.push('未发现明显技术编辑痕迹')
     }
     
-    const room = analysis.room_analysis || {}
-    if (room.confidence === 'high') totalScore += 3
-    else if (room.confidence === 'medium') totalScore += 2
-    else totalScore += 1
-    factorCount++
+    return {
+      score: Math.max(0, Math.min(100, score)),
+      findings,
+      label: score >= 80 ? '原片可能性高' : score >= 50 ? '有待进一步确认' : '存在编辑风险'
+    }
+  }
+  
+  /**
+   * B. 语境一致性分 (Auth-Context)
+   * 环境线索、反光/镜像、物理一致性、与叙述匹配
+   */
+  const calculateAuthContext = (analysis, girlfriendComments = []) => {
+    let score = 100
+    let findings = []
+    let suspiciousItems = []
     
-    const avgScore = factorCount > 0 ? totalScore / factorCount : 0
+    // === 环境线索一致性 ===
+    const room = analysis?.room_analysis || {}
+    if (room.confidence === 'high') {
+      score += 5
+    } else if (room.confidence === 'low') {
+      score -= 10
+    }
+    
+    // === 可疑点分析（将girlfriendComments作为语境异常） ===
+    const suspiciousCount = girlfriendComments?.length || 0
+    if (suspiciousCount > 0) {
+      // 每个可疑点扣分
+      const penalty = Math.min(suspiciousCount * 15, 45)
+      score -= penalty
+      suspiciousItems = girlfriendComments.slice(0, 3)
+      
+      if (suspiciousCount >= 3) {
+        findings.push(`发现${suspiciousCount}个可疑细节，有姐妹吗能抽空确认下？`)
+      } else if (suspiciousCount >= 2) {
+        findings.push(`有${suspiciousCount}个地方看着不对劲啊...`)
+      } else {
+        findings.push('有一个小细节需要留意')
+      }
+    } else {
+      findings.push('暂未发现明显语境异常')
+    }
+    
+    // === 物理一致性（光影/透视） ===
+    const details = analysis?.details || {}
+    const specialElements = details.items?.filter(item => 
+      item.claim?.includes('反光') || item.claim?.includes('镜像') || item.claim?.includes('光影')
+    ) || []
+    
+    if (specialElements.length > 0) {
+      findings.push('画面中存在反光/镜像细节')
+    }
+    
+    return {
+      score: Math.max(0, Math.min(100, score)),
+      findings,
+      suspiciousItems,
+      suspiciousCount,
+      label: score >= 80 ? '语境一致' : score >= 50 ? '存在疑点' : '多处异常'
+    }
+  }
+  
+  /**
+   * C. 画像置信度 (Profile-Confidence)
+   * 不是“画像结论好坏”，而是“能否可靠推断”
+   * 决定输出粒度（标签数量、语气强弱）
+   */
+  const calculateProfileConfidence = (analysis, gates) => {
+    let score = 0
+    let maxScore = 0
+    let findings = []
+    let outputGranularity = 'full'  // full/partial/minimal
+    
+    const person = analysis?.person || {}
+    const lifestyle = analysis?.lifestyle || {}
+    
+    // === 人物可见性 ===
+    maxScore += 30
+    if (person.detected) {
+      const bodyVis = person.evidence?.body_visibility || ''
+      if (bodyVis.includes('全身')) {
+        score += 30 * gates.angle
+      } else if (bodyVis.includes('上半身')) {
+        score += 20 * gates.angle
+      } else if (bodyVis.includes('头肩')) {
+        score += 10 * gates.angle
+      } else {
+        score += 5
+      }
+    }
+    
+    // === 参照物有效性 ===
+    maxScore += 20
+    const reference = person.evidence?.reference || ''
+    if (reference && !reference.includes('无明显') && !reference.includes('N/A')) {
+      score += 20 * gates.clarity
+      findings.push('有有效参照物')
+    }
+    
+    // === 局部特征丰富度 ===
+    maxScore += 30
+    const partialFeatures = person.partial_features || {}
+    let featureCount = 0
+    Object.values(partialFeatures).forEach(v => {
+      if (v && !包含无效(v)) featureCount++
+    })
+    score += Math.min(featureCount * 6, 30) * gates.clarity
+    
+    // === 生活方式线索 ===
+    maxScore += 20
+    if (lifestyle.consumption_level && lifestyle.consumption_level !== '无法判断') {
+      score += 10
+    }
+    if (lifestyle.accommodation_level && lifestyle.accommodation_level !== '无法判断') {
+      score += 10
+    }
+    
+    // 计算最终分数（归一化到100）
+    const finalScore = maxScore > 0 ? (score / maxScore) * 100 : 50
+    
+    // 决定输出粒度
+    if (finalScore >= 70) {
+      outputGranularity = 'full'
+      findings.push('画面质量足以支撑详细推断')
+    } else if (finalScore >= 40) {
+      outputGranularity = 'partial'
+      findings.push('部分特征可推断，结论谨慎')
+    } else {
+      outputGranularity = 'minimal'
+      findings.push('线索不足，建议追拍更清晰的照片')
+    }
+    
+    // === 模糊度触发追拍建议 ===
+    let needMorePhotos = false
+    let morePhotosSuggestions = []
+    
+    if (gates.clarity < 0.8) {
+      needMorePhotos = true
+      morePhotosSuggestions.push('补一张更清晰的照片')
+    }
+    if (gates.angle < 0.8) {
+      needMorePhotos = true
+      morePhotosSuggestions.push('补一张不同角度的照片')
+    }
+    if (!reference || reference.includes('无明显')) {
+      needMorePhotos = true
+      morePhotosSuggestions.push('补一张带参照物的照片')
+    }
+    
+    return {
+      score: Math.round(finalScore),
+      findings,
+      outputGranularity,
+      needMorePhotos,
+      morePhotosSuggestions,
+      label: finalScore >= 70 ? '可信赖推断' : finalScore >= 40 ? '部分可推断' : '线索不足'
+    }
+  }
+  
+  // 辅助函数：检查是否为无效值
+  const 包含无效 = (str) => {
+    if (!str) return true
+    return str.includes('未见') || str.includes('无法') || str.includes('N/A') || str.includes('不可见')
+  }
+  
+  /**
+   * 综合可靠性评估（新架构入口）
+   * 拆分为3个子分数，各司其责
+   */
+  const calculateReliability = (analysis, girlfriendComments = []) => {
+    if (!analysis) {
+      return {
+        level: 'unknown',
+        label: '无法判断',
+        summary: '暂无足够信息进行分析',
+        authTech: null,
+        authContext: null,
+        profileConf: null,
+        suspiciousCount: 0
+      }
+    }
+    
+    // 1. 计算可靠性门控
+    const gates = calculateReliabilityGates(analysis)
+    
+    // 2. 计算三个子分数
+    const authTech = calculateAuthTech(analysis, gates)
+    const authContext = calculateAuthContext(analysis, girlfriendComments)
+    const profileConf = calculateProfileConfidence(analysis, gates)
+    
+    // 3. 综合评估（注意：profileConf不参与真伪判断，只作为粒度控制）
+    // 真伪判断只看 Auth-Tech 和 Auth-Context
+    const authScore = (authTech.score * 0.5 + authContext.score * 0.5)
     
     let level, label, summary
-    if (avgScore >= 2.5) {
+    const suspiciousCount = authContext.suspiciousCount
+    
+    if (authScore >= 75) {
       level = 'high'
-      label = '可信度较高'
-      summary = '综合分析显示，该照片的真实性指标较好，各项分析一致性较高。'
-    } else if (avgScore >= 1.8) {
+      label = '照片可信度较高'
+      if (suspiciousCount === 0) {
+        summary = '技术指标正常，未发现明显可疑点。'
+      } else {
+        summary = `技术指标正常，但有${suspiciousCount}个小细节值得留意。`
+      }
+    } else if (authScore >= 50) {
       level = 'medium'
       label = '可信度中等'
-      summary = '部分指标正常，但存在一些不确定因素，建议结合其他信息综合判断。'
-    } else if (avgScore >= 1) {
+      if (suspiciousCount >= 2) {
+        summary = `哎呀姐妹，这照片有${suspiciousCount}个地方看着怎么那么奇怪？`
+      } else if (suspiciousCount === 1) {
+        summary = '基本正常，但有一个地方有点说不上来的微妙...'
+      } else {
+        summary = '有些指标不确定，建议结合其他照片综合判断。'
+      }
+    } else {
       level = 'low'
       label = '可信度较低'
-      summary = '多项指标存在疑问，证据不足或存在异常，请谨慎对待。'
-    } else {
-      level = 'unknown'
-      label = '无法判断'
-      summary = '分析信息不足，无法给出可靠性评估。'
+      if (suspiciousCount >= 3) {
+        summary = `我靠，这照片${suspiciousCount}个可疑点啊！哪个姐妹能帮我删了这人？`
+      } else {
+        summary = '多项指标存在疑问，这照片真实性得打个问号...'  
+      }
     }
     
-    return { level, label, summary }
+    // 追拍建议（来自 Profile-Confidence）
+    if (profileConf.needMorePhotos && profileConf.morePhotosSuggestions.length > 0) {
+      summary += '\n\n📸 追拍建议：' + profileConf.morePhotosSuggestions.join('、')
+    }
+    
+    return {
+      level,
+      label,
+      summary,
+      // 三个子分数
+      authTech,
+      authContext, 
+      profileConf,
+      suspiciousCount,
+      // 门控信息
+      gates
+    }
   }
 
   // 获取生活方式分析摘要
@@ -236,7 +549,8 @@ function App() {
   }
 
   const analysis = result?.analysis
-  const reliability = calculateReliability(analysis)
+  const girlfriendComments = result?.girlfriend_comments || []
+  const reliability = calculateReliability(analysis, girlfriendComments)
   const lifestyle = getLifestyleSummary(analysis)
   const details = getDetailFindings(analysis)
 
@@ -436,7 +750,7 @@ function App() {
                 <div className="window-header" onClick={() => toggleCollapse('lifestyle')} style={{ cursor: 'pointer' }}>
                   <div className="window-header-left">
                     <span className="window-header-icon">🎯</span>
-                    <span>生活方式分析</span>
+                    <span>图片元素分析</span>
                   </div>
                   <div className="window-controls">
                     <button className="window-btn">{collapsed.lifestyle ? '▼' : '▲'}</button>
@@ -445,6 +759,32 @@ function App() {
                 {!collapsed.lifestyle && (
                   <div className="lifestyle-content">
                     <p className="analysis-text">{lifestyle.text}</p>
+                    
+                    {/* 品牌价格区间展示 */}
+                    {analysis.lifestyle?.brands_info?.items?.length > 0 && (
+                      <div className="brands-section">
+                        <div className="brands-header">
+                          <span className="brands-icon">🏷️</span>
+                          <span className="brands-title">识别到的品牌</span>
+                          {analysis.lifestyle.brands_info.highest_tier && (
+                            <span className={`tier-badge tier-${analysis.lifestyle.brands_info.highest_tier.includes('奢') ? 'luxury' : analysis.lifestyle.brands_info.highest_tier.includes('轻奢') ? 'light' : 'normal'}`}>
+                              {analysis.lifestyle.brands_info.highest_tier}
+                            </span>
+                          )}
+                        </div>
+                        <div className="brands-list">
+                          {analysis.lifestyle.brands_info.items.map((item, idx) => (
+                            <div key={idx} className={`brand-item brand-${item.tier.includes('奢') ? 'luxury' : item.tier.includes('轻奢') ? 'light' : item.tier.includes('运动') ? 'sport' : 'normal'}`}>
+                              <span className="brand-name">{item.brand}</span>
+                              <span className="brand-tier">{item.tier}</span>
+                              <span className="brand-price">{item.price_range}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="brands-summary">{analysis.lifestyle.brands_info.summary}</div>
+                      </div>
+                    )}
+                    
                     <div className="tags-container">
                       {lifestyle.tags.map((tag, idx) => (
                         <span key={idx} className="analysis-tag">
@@ -456,7 +796,14 @@ function App() {
                        analysis.room_analysis.inferred_people_count !== '无法判断' && (
                         <span className="analysis-tag">
                           <span className="tag-icon">👥</span>
-                          推断{analysis.room_analysis.inferred_people_count}人
+                          推断{analysis.room_analysis.inferred_people_count}
+                        </span>
+                      )}
+                      {analysis.lifestyle?.consumption_level && 
+                       analysis.lifestyle.consumption_level !== '无法判断' && (
+                        <span className="analysis-tag">
+                          <span className="tag-icon">💰</span>
+                          {analysis.lifestyle.consumption_level}
                         </span>
                       )}
                     </div>

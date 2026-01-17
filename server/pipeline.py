@@ -12,6 +12,201 @@ from modules_person import person_module, validate_person_evidence
 
 
 # ----------------------------
+# 品牌价格区间数据库
+# ----------------------------
+BRAND_PRICE_DATABASE = {
+    # 奢侈品 - 的体价格区间（单位：人民币）
+    "luxury": {
+        # 奢侈品包袋
+        "LV": {"tier": "奢侈品", "price_range": "8000-80000+", "category": "包袋/服饰"},
+        "Gucci": {"tier": "奢侈品", "price_range": "5000-50000+", "category": "包袋/服饰"},
+        "Chanel": {"tier": "奢侈品", "price_range": "10000-100000+", "category": "包袋/化妆品"},
+        "Hermes": {"tier": "顶奢", "price_range": "30000-200000+", "category": "包袋/配饰"},
+        "爱马仕": {"tier": "顶奢", "price_range": "30000-200000+", "category": "包袋/配饰"},
+        "Prada": {"tier": "奢侈品", "price_range": "6000-40000+", "category": "包袋/服饰"},
+        "Dior": {"tier": "奢侈品", "price_range": "5000-50000+", "category": "包袋/化妆品"},
+        "Burberry": {"tier": "奢侈品", "price_range": "3000-30000+", "category": "服饰/包袋"},
+        "Fendi": {"tier": "奢侈品", "price_range": "5000-40000+", "category": "包袋"},
+        "Bottega Veneta": {"tier": "奢侈品", "price_range": "8000-50000+", "category": "包袋"},
+        "BV": {"tier": "奢侈品", "price_range": "8000-50000+", "category": "包袋"},
+        "Celine": {"tier": "奢侈品", "price_range": "6000-40000+", "category": "包袋"},
+        "Saint Laurent": {"tier": "奢侈品", "price_range": "5000-35000+", "category": "包袋/服饰"},
+        "YSL": {"tier": "奢侈品", "price_range": "5000-35000+", "category": "包袋/化妆品"},
+        "Balenciaga": {"tier": "奢侈品", "price_range": "4000-30000+", "category": "包袋/鞋履"},
+        "Loewe": {"tier": "奢侈品", "price_range": "8000-40000+", "category": "包袋"},
+        # 奢侈手表
+        "Rolex": {"tier": "顶奢", "price_range": "50000-500000+", "category": "手表"},
+        "劳力士": {"tier": "顶奢", "price_range": "50000-500000+", "category": "手表"},
+        "Omega": {"tier": "奢侈品", "price_range": "20000-150000+", "category": "手表"},
+        "欧米茄": {"tier": "奢侈品", "price_range": "20000-150000+", "category": "手表"},
+        "Cartier": {"tier": "顶奢", "price_range": "30000-300000+", "category": "手表/珠宝"},
+        "卡地亚": {"tier": "顶奢", "price_range": "30000-300000+", "category": "手表/珠宝"},
+        "Patek Philippe": {"tier": "顶奢", "price_range": "150000-3000000+", "category": "手表"},
+        "百达翡丽": {"tier": "顶奢", "price_range": "150000-3000000+", "category": "手表"},
+        # 高端护肤品
+        "La Mer": {"tier": "高端护肤", "price_range": "1500-5000+", "category": "护肤品"},
+        "海蓝之谜": {"tier": "高端护肤", "price_range": "1500-5000+", "category": "护肤品"},
+        "SK-II": {"tier": "高端护肤", "price_range": "800-2500+", "category": "护肤品"},
+        "雅诗兰黛": {"tier": "高端护肤", "price_range": "500-2000+", "category": "护肤品"},
+        "Estee Lauder": {"tier": "高端护肤", "price_range": "500-2000+", "category": "护肤品"},
+        "CPB": {"tier": "高端护肤", "price_range": "800-3000+", "category": "护肤品"},
+        "肩邦御": {"tier": "高端护肤", "price_range": "800-3000+", "category": "护肤品"},
+        "HR": {"tier": "高端护肤", "price_range": "1000-4000+", "category": "护肤品"},
+        "赫莲娜": {"tier": "高端护肤", "price_range": "1000-4000+", "category": "护肤品"},
+    },
+    # 轻奢品牌
+    "light_luxury": {
+        "Coach": {"tier": "轻奢", "price_range": "1500-8000", "category": "包袋"},
+        "Michael Kors": {"tier": "轻奢", "price_range": "1000-5000", "category": "包袋"},
+        "MK": {"tier": "轻奢", "price_range": "1000-5000", "category": "包袋"},
+        "Kate Spade": {"tier": "轻奢", "price_range": "1000-4000", "category": "包袋"},
+        "Tory Burch": {"tier": "轻奢", "price_range": "1500-6000", "category": "包袋/鞋"},
+        "Marc Jacobs": {"tier": "轻奢", "price_range": "1500-5000", "category": "包袋"},
+        "Longchamp": {"tier": "轻奢", "price_range": "600-3000", "category": "包袋"},
+        "珑骏": {"tier": "轻奢", "price_range": "600-3000", "category": "包袋"},
+        "MCM": {"tier": "轻奢", "price_range": "2000-8000", "category": "包袋"},
+        # 轻奢手表
+        "Tissot": {"tier": "轻奢", "price_range": "2000-10000", "category": "手表"},
+        "天梭": {"tier": "轻奢", "price_range": "2000-10000", "category": "手表"},
+        "Longines": {"tier": "轻奢", "price_range": "8000-30000", "category": "手表"},
+        "浪琴": {"tier": "轻奢", "price_range": "8000-30000", "category": "手表"},
+        # 中端护肤品
+        "兰蔻": {"tier": "中端护肤", "price_range": "300-1200", "category": "护肤品"},
+        "Lancome": {"tier": "中端护肤", "price_range": "300-1200", "category": "护肤品"},
+        "雅漾": {"tier": "中端护肤", "price_range": "150-500", "category": "护肤品"},
+        "科颜氏": {"tier": "中端护肤", "price_range": "200-800", "category": "护肤品"},
+        "欧舒丹": {"tier": "中端护肤", "price_range": "150-600", "category": "护肤品"},
+    },
+    # 运动品牌
+    "sports": {
+        "Nike": {"tier": "运动品牌", "price_range": "300-2000", "category": "运动服饰/鞋"},
+        "耐克": {"tier": "运动品牌", "price_range": "300-2000", "category": "运动服饰/鞋"},
+        "Adidas": {"tier": "运动品牌", "price_range": "300-1500", "category": "运动服饰/鞋"},
+        "阿迪达斯": {"tier": "运动品牌", "price_range": "300-1500", "category": "运动服饰/鞋"},
+        "Lululemon": {"tier": "高端运动", "price_range": "500-1500", "category": "运动服饰"},
+        "Under Armour": {"tier": "运动品牌", "price_range": "200-1000", "category": "运动服饰"},
+        "New Balance": {"tier": "运动品牌", "price_range": "400-1500", "category": "运动鞋"},
+        "Puma": {"tier": "运动品牌", "price_range": "200-1000", "category": "运动服饰/鞋"},
+        "Converse": {"tier": "休闲品牌", "price_range": "300-800", "category": "鞋"},
+        "Vans": {"tier": "休闲品牌", "price_range": "300-700", "category": "鞋"},
+    },
+    # 快时尚/大众品牌
+    "fast_fashion": {
+        "Zara": {"tier": "快时尚", "price_range": "100-800", "category": "服饰"},
+        "H&M": {"tier": "快时尚", "price_range": "50-500", "category": "服饰"},
+        "优衣库": {"tier": "快时尚", "price_range": "50-500", "category": "服饰"},
+        "Uniqlo": {"tier": "快时尚", "price_range": "50-500", "category": "服饰"},
+        "GAP": {"tier": "快时尚", "price_range": "100-600", "category": "服饰"},
+        "UR": {"tier": "快时尚", "price_range": "100-500", "category": "服饰"},
+        # 大众护肤
+        "大宝": {"tier": "大众护肤", "price_range": "20-80", "category": "护肤品"},
+        "美加净": {"tier": "大众护肤", "price_range": "20-60", "category": "护肤品"},
+        "百雀羚": {"tier": "大众护肤", "price_range": "30-100", "category": "护肤品"},
+    },
+    # 电子产品
+    "electronics": {
+        "iPhone": {"tier": "高端电子", "price_range": "5000-15000", "category": "手机"},
+        "Apple": {"tier": "高端电子", "price_range": "2000-30000", "category": "电子产品"},
+        "苹果": {"tier": "高端电子", "price_range": "2000-30000", "category": "电子产品"},
+        "MacBook": {"tier": "高端电子", "price_range": "8000-25000", "category": "电脑"},
+        "AirPods": {"tier": "高端电子", "price_range": "1000-2000", "category": "耳机"},
+        "AirPods Pro": {"tier": "高端电子", "price_range": "1500-2000", "category": "耳机"},
+        "iPad": {"tier": "高端电子", "price_range": "2500-12000", "category": "平板"},
+        "Apple Watch": {"tier": "高端电子", "price_range": "2000-8000", "category": "智能手表"},
+        "Samsung": {"tier": "中高端电子", "price_range": "2000-10000", "category": "电子产品"},
+        "三星": {"tier": "中高端电子", "price_range": "2000-10000", "category": "电子产品"},
+        "Sony": {"tier": "中高端电子", "price_range": "1500-8000", "category": "电子产品"},
+        "索尼": {"tier": "中高端电子", "price_range": "1500-8000", "category": "电子产品"},
+        "华为": {"tier": "中高端电子", "price_range": "2000-8000", "category": "电子产品"},
+        "Huawei": {"tier": "中高端电子", "price_range": "2000-8000", "category": "电子产品"},
+        "小米": {"tier": "大众电子", "price_range": "1000-5000", "category": "电子产品"},
+        "Xiaomi": {"tier": "大众电子", "price_range": "1000-5000", "category": "电子产品"},
+    }
+}
+
+
+def lookup_brand_info(brand_name: str) -> Optional[Dict[str, str]]:
+    """查找品牌信息"""
+    # 遍历所有分类查找
+    for category_brands in BRAND_PRICE_DATABASE.values():
+        # 精确匹配
+        if brand_name in category_brands:
+            return category_brands[brand_name]
+        # 模糊匹配（大小写不敏感）
+        for key, value in category_brands.items():
+            if brand_name.lower() == key.lower():
+                return value
+    return None
+
+
+def enrich_brands_with_price(brands_detected: Dict[str, List[str]]) -> Dict[str, Any]:
+    """
+    为识别到的品牌添加价格区间信息
+    
+    Returns:
+        {
+            "items": [
+                {"brand": "LV", "tier": "奢侈品", "price_range": "8000-80000+", "category": "包袋/服饰"},
+                ...
+            ],
+            "summary": "识别到1个奢侈品牌、2个运动品牌",
+            "highest_tier": "奢侈品"
+        }
+    """
+    if not brands_detected:
+        return {"items": [], "summary": "未识别到品牌", "highest_tier": None}
+    
+    items = []
+    tier_count = {}
+    
+    # 遍历所有品牌分类
+    for category, brand_list in brands_detected.items():
+        if not brand_list:
+            continue
+        for brand in brand_list:
+            if not brand or brand == "未识别到品牌":
+                continue
+            info = lookup_brand_info(brand)
+            if info:
+                items.append({
+                    "brand": brand,
+                    "tier": info["tier"],
+                    "price_range": f"¥{info['price_range']}",
+                    "category": info["category"]
+                })
+                tier_count[info["tier"]] = tier_count.get(info["tier"], 0) + 1
+            else:
+                # 未知品牌
+                items.append({
+                    "brand": brand,
+                    "tier": "未知",
+                    "price_range": "未知",
+                    "category": category
+                })
+    
+    # 生成摘要
+    if tier_count:
+        parts = [f"{count}个{tier}" for tier, count in tier_count.items()]
+        separator = "、"  # 顿号
+        summary = f"识别到{separator.join(parts)}"
+    else:
+        summary = "未识别到已知品牌"
+    
+    # 确定最高档次
+    tier_order = ["顶奢", "奢侈品", "高端护肤", "高端电子", "轻奢", "中端护肤", "高端运动", "运动品牌", "中高端电子", "快时尚", "休闲品牌", "大众护肤", "大众电子"]
+    highest_tier = None
+    for tier in tier_order:
+        if tier in tier_count:
+            highest_tier = tier
+            break
+    
+    return {
+        "items": items,
+        "summary": summary,
+        "highest_tier": highest_tier
+    }
+
+# ----------------------------
 # Schema helpers
 # ----------------------------
 def mk_item(
@@ -165,8 +360,16 @@ def _build_intention_items(qwen_result: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _build_room_analysis(qwen_result: Dict[str, Any]) -> Dict[str, Any]:
-    """构建房间人数和关系推断分析"""
+    """构建房间人数和关系推断分析
+    
+    注意：室外场景不进行室内物品分析
+    """
     room = qwen_result.get("room_analysis", {})
+    scene = qwen_result.get("scene", {})
+    
+    # 检查是否为室外场景
+    location_type = scene.get("location_type", "")
+    is_outdoor = "室外" in location_type
     
     # 默认值
     default_result = {
@@ -183,6 +386,24 @@ def _build_room_analysis(qwen_result: Dict[str, Any]) -> Dict[str, Any]:
         "limitations": ["环境推断存在较大不确定性，仅供参考"],
         "confidence": "low"
     }
+    
+    # 室外场景：不进行室内物品分析（拖鞋、牙刷、餐具等）
+    if is_outdoor:
+        return {
+            "inferred_people_count": "不适用",
+            "relationship_hint": "不适用",
+            "evidence": ["来自场景：室外场景不进行室内物品分析"],
+            "clues": {
+                "tableware": "不适用（室外场景）",
+                "seating": "不适用（室外场景）",
+                "personal_items": "不适用（室外场景）",
+                "decoration": "不适用（室外场景）",
+                "space_layout": "不适用（室外场景）"
+            },
+            "limitations": ["室外场景无法进行室内环境推断"],
+            "confidence": "low",
+            "is_outdoor": True
+        }
     
     if not room:
         return default_result
@@ -261,6 +482,20 @@ async def analyze_image_bytes(image_bytes: bytes, mime: str, target_gender: str 
         details_items = _build_details_items(qwen_result)
         intention_items = _build_intention_items(qwen_result)
         room_analysis = _build_room_analysis(qwen_result)
+        
+        # 提取品牌价格信息
+        lifestyle_raw = qwen_result.get("lifestyle", {})
+        brands_detected = lifestyle_raw.get("brands_detected", {})
+        brands_info = enrich_brands_with_price(brands_detected)
+        
+        # 构建完整的 lifestyle 输出
+        lifestyle_output = {
+            "items": lifestyle_items,
+            "consumption_level": lifestyle_raw.get("consumption_level", "无法判断"),
+            "accommodation_level": lifestyle_raw.get("accommodation_level", "无法判断"),
+            "brands_detected": brands_detected,
+            "brands_info": brands_info  # 新增：带价格区间的品牌信息
+        }
     else:
         # Qwen 调用失败，使用保守的本地结果
         lifestyle_items = []
@@ -302,6 +537,16 @@ async def analyze_image_bytes(image_bytes: bytes, mime: str, target_gender: str 
             "limitations": [qwen_result.get("_error", "未知错误")],
             "confidence": "low"
         }
+        
+        # 空的品牌信息
+        brands_info = {"items": [], "summary": "未识别到品牌", "highest_tier": None}
+        lifestyle_output = {
+            "items": lifestyle_items,
+            "consumption_level": "无法判断",
+            "accommodation_level": "无法判断",
+            "brands_detected": {},
+            "brands_info": brands_info
+        }
 
     # 6) 可信度项
     credibility_items = cred["items"]
@@ -309,7 +554,7 @@ async def analyze_image_bytes(image_bytes: bytes, mime: str, target_gender: str 
     return {
         "image_id": image_id,
         "analysis": {
-            "lifestyle": {"items": lifestyle_items},
+            "lifestyle": lifestyle_output,  # 修改：使用包含品牌信息的完整输出
             "details": {"items": details_items},
             "intention": {"items": intention_items},
             "credibility": {"items": credibility_items},

@@ -74,19 +74,40 @@ def _normalize_height(value: str) -> str:
 
 
 def _normalize_body_type(value: str) -> str:
-    """规范化体型输出"""
+    """
+    规范化体型输出
+    
+    支持多种描述方式的识别：
+    - 偏瘦：瘦、纤细、苗条、消瘦、单薄、骨感等
+    - 偏壮：壮、胖、丰满、结实、健壮、圆润、有肉等
+    - 匀称：匀称、正常、适中、标准、中等、健康等
+    """
     if not value:
         return "无法判断"
     value = str(value).strip()
+    
+    # 精确匹配
     if value in VALID_BODY_TYPE:
         return value
-    # 尝试模糊匹配
-    if "瘦" in value:
-        return "偏瘦"
-    if "壮" in value or "胖" in value:
-        return "偏壮"
-    if "匀" in value or "正常" in value:
-        return "匀称"
+    
+    # 偏瘦类关键词（优先级高）
+    slim_keywords = ["瘦", "纤细", "苗条", "消瘦", "单薄", "骨感", "瘦弱", "瘦小", "修长"]
+    for kw in slim_keywords:
+        if kw in value:
+            return "偏瘦"
+    
+    # 偏壮类关键词
+    fat_keywords = ["壮", "胖", "丰满", "结实", "健壮", "圆润", "有肉", "赘肉", "粗壮", "高大", "吧商", "厚实", "肉感"]
+    for kw in fat_keywords:
+        if kw in value:
+            return "偏壮"
+    
+    # 匀称类关键词（范围最广，放最后匹配）
+    normal_keywords = ["匀称", "正常", "适中", "标准", "中等", "健康", "普通", "一般", "平均"]
+    for kw in normal_keywords:
+        if kw in value:
+            return "匀称"
+    
     return "无法判断"
 
 
@@ -219,6 +240,90 @@ def _force_add_missing_evidence(evidence: Dict[str, str], missing: List[str]) ->
     return result
 
 
+def _extract_body_type_from_partial_features(partial_features: Dict[str, str]) -> Tuple[str, bool]:
+    """
+    从局部特征中提取体型判断
+    
+    即使没有参照物，也可以通过局部特征（手部、手臂、脸部、颈肩、身体）推断体型
+    
+    Returns:
+        (body_type, has_valid_clue)
+    """
+    if not partial_features:
+        return "无法判断", False
+    
+    # 检查是否有有效的局部特征
+    valid_features = []
+    feature_keys = ["hand", "arm", "face", "neck_shoulder", "body"]
+    
+    for key in feature_keys:
+        value = partial_features.get(key, "")
+        # 排除无效的特征（未见、无法、N/A等）
+        if value and "未见" not in value and "无法" not in value and "N/A" not in value and "不可见" not in value:
+            valid_features.append(key)
+    
+    # 如果没有有效的局部特征，无法判断
+    if not valid_features:
+        return "无法判断", False
+    
+    # 检查 body_type_clue 综合判断
+    body_type_clue = partial_features.get("body_type_clue", "")
+    if body_type_clue and "无法" not in body_type_clue and "不确定" not in body_type_clue:
+        # 从 body_type_clue 中提取体型
+        normalized = _normalize_body_type(body_type_clue)
+        if normalized != "无法判断":
+            return normalized, True
+    
+    # 如果没有明确的 body_type_clue，从各个局部特征中推断
+    # 扩展关键词列表 - 更全面的关键词
+    slim_keywords = [
+        "纤细", "修长", "瘦削", "骨骼", "线条分明", "瘦", "细", 
+        "锁骨明显", "锁骨", "骨感", "瘦小", "苗条", "纤弱",
+        "手指修长", "手腕细", "胳膊细", "身材细小",
+        "细瘦", "消瘦", "窄窄", "瘦弱", "单薄"
+    ]
+    fat_keywords = [
+        "圆润", "有肉", "粗", "壮", "胖", "丰满", "赘肉", 
+        "肌肉", "结实", "厚实", "健壮", "粗壮", "高大",
+        "手指短粗", "手腕粗", "胳膊粗", "双下巴",
+        "腹部", "小腹", "圆脸", "肉感", "宽厚"
+    ]
+    normal_keywords = [
+        "匀称", "正常", "适中", "标准", "中等", "健康"
+    ]
+    
+    clues = []
+    all_text = " ".join([partial_features.get(key, "") for key in valid_features])
+    
+    for keyword in slim_keywords:
+        if keyword in all_text:
+            clues.append("偏瘦")
+            break
+    
+    for keyword in fat_keywords:
+        if keyword in all_text:
+            clues.append("偏壮")
+            break
+    
+    for keyword in normal_keywords:
+        if keyword in all_text:
+            clues.append("匀称")
+            break
+    
+    if clues:
+        # 统计最多的线索
+        from collections import Counter
+        most_common = Counter(clues).most_common(1)
+        if most_common:
+            return most_common[0][0], True
+    
+    # 如果仍然无法判断，但有有效特征，默认返回"匀称"（因为没有明显胖/瘦特征）
+    if valid_features:
+        return "匀称", True
+    
+    return "无法判断", False
+
+
 def person_module(
     det: Dict[str, Any],
     cred: Dict[str, Any],
@@ -227,10 +332,10 @@ def person_module(
     """
     人物体征分析主入口
     
-    严格执行 evidence gate：
-    - 如果 evidence 缺少三要素中的任何一个
-    - 身高/体型 强制输出 "无法判断"
-    - 姿态 强制输出 "不确定"
+    evidence gate 规则：
+    - 身高判断：需要参照物 + 全身可见性 + 角度信息
+    - 体型判断：可以通过局部特征（手部、手臂、脸部等）推断，不一定需要参照物
+    - 姿态判断：需要可见身体部分
     
     Args:
         det: 本地检测结果
@@ -242,9 +347,56 @@ def person_module(
     """
     qwen_result = qwen_result or {}
     
-    # 检查是否检测到人物
+    # 从 Qwen 结果获取人物分析
+    qwen_person = qwen_result.get("person", {})
+    partial_features = qwen_person.get("partial_features", {})
+    
+    # 检查是否检测到人物（本地检测或 Qwen 检测）
     persons = det.get("persons", [])
-    if not persons:
+    local_person_detected = bool(persons)
+    
+    # Qwen 检测到人物（支持布尔值、字符串、数字）
+    qwen_detected = qwen_person.get("detected", False)
+    if isinstance(qwen_detected, str):
+        qwen_detected = qwen_detected.lower() in ("true", "1", "yes")
+    qwen_person_detected = bool(qwen_detected)
+    
+    # Qwen 返回了人数 > 0
+    qwen_count = qwen_person.get("count", 0)
+    if isinstance(qwen_count, str):
+        try:
+            qwen_count = int(qwen_count)
+        except:
+            qwen_count = 0
+    qwen_has_count = qwen_count > 0
+    
+    # Qwen 返回了任何局部特征
+    has_partial_features = bool(partial_features) and any(
+        v and "未见" not in str(v) and "N/A" not in str(v) 
+        for v in partial_features.values()
+    )
+    
+    # Qwen 返回了体型相关的 evidence
+    qwen_evidence = qwen_person.get("evidence", {})
+    body_vis = qwen_evidence.get("body_visibility", "")
+    has_body_visibility = body_vis and "可见" in body_vis and "不可见" not in body_vis
+    
+    # Qwen 返回了有效的体型判断
+    qwen_body_type = qwen_person.get("body_type", "")
+    has_valid_body_type = qwen_body_type and "无法" not in qwen_body_type and qwen_body_type.strip() != ""
+    
+    # 综合判断：任一条件满足即认为检测到人物
+    has_person_detected = (
+        local_person_detected or 
+        qwen_person_detected or 
+        qwen_has_count or 
+        has_partial_features or
+        has_body_visibility or
+        has_valid_body_type
+    )
+    
+    # 如果本地和 Qwen 都没检测到人物，才返回空结果
+    if not has_person_detected:
         return {
             "detected": False,
             "count": 0,
@@ -277,9 +429,6 @@ def person_module(
     if missing:
         evidence = _force_add_missing_evidence(evidence, missing)
     
-    # 从 Qwen 结果获取分析
-    qwen_person = qwen_result.get("person", {})
-    
     # 性别判断（单独处理，不受体征 evidence gate 影响）
     gender_evidence = qwen_person.get("gender_evidence", {})
     gender_valid, gender_reason = _validate_gender_evidence(gender_evidence)
@@ -296,32 +445,59 @@ def person_module(
                 "consistency": f"线索一致性：{gender_reason}"
             }
     
-    # 如果 evidence 不完整，强制降级（身高/体型/姿态）
-    if not is_valid:
-        height = "无法判断"
-        body_type = "无法判断"
-        posture = "不确定"
-        confidence = "low"
-        limitations = [
-            f"evidence 缺少必要字段：{', '.join(missing)}",
-            "因证据不足，身高/体型强制降级为'无法判断'，姿态降级为'不确定'"
-        ]
-    else:
-        # evidence 完整，使用 Qwen 的分析结果（经过规范化）
+    limitations = []
+    
+    # 身高判断：严格要求参照物
+    has_reference = "未检测到" not in evidence.get("reference", "") and "无明显" not in evidence.get("reference", "")
+    
+    if is_valid and has_reference:
         height = _normalize_height(qwen_person.get("height", ""))
-        body_type = _normalize_body_type(qwen_person.get("body_type", ""))
+    else:
+        height = "无法判断"
+        if not has_reference:
+            limitations.append("参照物不明显，无法准确判断身高")
+    
+    # 体型判断：可以通过局部特征推断
+    # 先尝试从 Qwen 的直接结果获取
+    body_type = _normalize_body_type(qwen_person.get("body_type", ""))
+    
+    # 如果 Qwen 直接结果是"无法判断"，尝试从局部特征推断
+    if body_type == "无法判断":
+        # 优先从 partial_features 推断
+        if partial_features:
+            inferred_body_type, has_clue = _extract_body_type_from_partial_features(partial_features)
+            if has_clue:
+                body_type = inferred_body_type
+                limitations.append("体型基于局部特征推断，仅供参考")
+        
+        # 如果还是无法判断，检查身体可见性
+        if body_type == "无法判断" and has_body_visibility:
+            body_type = "匀称"
+            limitations.append("体型无明显胖瘦特征，默认为匀称")
+        
+        # 最终 fallback：如果检测到了人物（任何条件），但上面都没有给出判断，默认匀称
+        if body_type == "无法判断" and has_person_detected:
+            body_type = "匀称"
+            limitations.append("体型无足够线索，默认为匀称")
+    
+    # 姿态判断
+    if is_valid:
         posture = _normalize_posture(qwen_person.get("posture", ""))
         confidence = qwen_person.get("confidence", "low")
+    else:
+        posture = "不确定"
+        confidence = "low"
+        if missing:
+            limitations.append(f"evidence 缺少：{', '.join(missing)}，姿态判断降级")
+    
+    # ★★★ 终极保底：走到这里说明检测到了人物，绝对不允许返回"无法判断" ★★★
+    if body_type == "无法判断":
+        body_type = "匀称"
+        if "体型" not in ' '.join(limitations):
+            limitations.append("体型无明显特征，默认为匀称")
+    
+    if not limitations:
         limitations = ["人物体征估计受拍摄角度、参照物等因素影响，仅供参考"]
-        
-        # 额外校验：如果参照物不明显，也应该更保守
-        if "未检测到" in evidence.get("reference", "") or "无明显" in evidence.get("reference", ""):
-            if height != "无法判断":
-                height = "无法判断"
-                limitations.append("参照物不明显，身高判断降级")
-            if body_type != "无法判断":
-                body_type = "无法判断"
-                limitations.append("参照物不明显，体型判断降级")
     
     # 构建 evidence_list（用于前端展示）
     evidence_list = [
@@ -331,14 +507,20 @@ def person_module(
     ]
     evidence_list = [e for e in evidence_list if e]  # 过滤空值
     
+    # 确定人物数量（优先用 Qwen 的结果，否则用本地检测）
+    person_count = qwen_count if qwen_count > 0 else len(persons)
+    if person_count == 0 and has_person_detected:
+        person_count = 1  # 检测到人物但数量未知，默认为1
+    
     return {
         "detected": True,
-        "count": len(persons),
+        "count": person_count,
         "gender": gender,
         "gender_evidence": gender_evidence,
         "height": height,
         "body_type": body_type,
         "posture": posture,
+        "partial_features": partial_features if partial_features else None,
         "evidence": evidence,
         "evidence_list": evidence_list,
         "limitations": limitations,
