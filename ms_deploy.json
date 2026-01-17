@@ -1,0 +1,10 @@
+{
+  "$schema": "https://modelscope.cn/api/v1/studios/deploy_schema.json",
+  "sdk_type": "docker",
+  "resource_configuration": "platform/2v-cpu-16g-mem",
+  "port": 7860,
+  "environment_variables": [
+    {"name": "DASHSCOPE_API_KEY", "value": "sk-8d685168110942009978c8f86c700bbf"},
+    {"name": "PYTHONUNBUFFERED", "value": "1"}
+  ]
+}
