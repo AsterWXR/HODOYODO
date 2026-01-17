@@ -1,0 +1,13 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+python-multipart==0.0.9
+pillow==10.4.0
+numpy==2.0.1
+opencv-python==4.10.0.84
+dashscope>=1.14.0
+httpx>=0.25.0
+
+# 可选增强（需要时再装）：
+# ultralytics（YOLO 物体检测增强）
+# pytesseract（OCR 文字识别）
+# mediapipe（姿态估计更准）

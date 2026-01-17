@@ -1,0 +1,145 @@
+{
+  "image_id": "d7c96761",
+  "analysis": {
+    "lifestyle": {
+      "items": [
+        {
+          "claim": "无法判断",
+          "evidence": [
+            "来自画面：房间内有未整理的床铺和散落的物品，显示使用痕迹但无明确消费水平信息"
+          ],
+          "limitations": [
+            "缺乏人物或具体消费行为线索，无法推断生活方式"
+          ],
+          "confidence": "low"
+        },
+        {
+          "claim": "场景判断：室内，酒店客房，配备双床、床头柜、玻璃门浴室和木地板",
+          "evidence": [
+            "来自画面：可见双床、床头柜、浴室玻璃门、木地板及房间布局"
+          ],
+          "limitations": [
+            "场景判断基于视觉特征，可能存在误判"
+          ],
+          "confidence": "high"
+        },
+        {
+          "claim": "画面中检测到物体：床, 床头柜, 桌子, 水瓶, 电话, 毛巾, 垃圾桶, 门",
+          "evidence": [
+            "来自画面：两张床并排摆放，中间有小圆桌，桌上放有矿泉水瓶和饮料杯；床头柜上有电话和水瓶；浴室门后可见毛巾悬挂"
+          ],
+          "limitations": [
+            "物体识别可能存在误检/漏检"
+          ],
+          "confidence": "low"
+        },
+        {
+          "claim": "本地检测补充：检测到物体 chair, book, toilet, bed, bottle",
+          "evidence": [
+            "来自本地检测（引擎：yolo）：物体检测结果"
+          ],
+          "limitations": [
+            "本地检测作为辅助参考"
+          ],
+          "confidence": "low"
+        }
+      ]
+    },
+    "details": {
+      "items": [
+        {
+          "claim": "画面中识别到文字：小红书号: 908992552",
+          "evidence": [
+            "来自画面：Qwen VL 文字识别结果"
+          ],
+          "limitations": [
+            "文字识别可能存在误读"
+          ],
+          "confidence": "medium"
+        },
+        {
+          "claim": "检测到特殊元素：水印",
+          "evidence": [
+            "来自画面：右下角有‘小红书’水印及用户编号"
+          ],
+          "limitations": [
+            "特殊元素判断存在主观性"
+          ],
+          "confidence": "low"
+        }
+      ]
+    },
+    "intention": {
+      "items": [
+        {
+          "claim": "可能用于展示住宿环境或分享旅行经历",
+          "evidence": [
+            "来自构图/画面：房间整洁但略显凌乱，有生活痕迹，拍摄角度为广角全景，符合社交媒体分享习惯"
+          ],
+          "limitations": [
+            "照片意图判断存在较大不确定性，仅供参考"
+          ],
+          "confidence": "medium"
+        }
+      ]
+    },
+    "credibility": {
+      "items": [
+        {
+          "claim": "画面清晰度较好（模糊迹象不明显）",
+          "evidence": [
+            "来自画面：模糊度指标（Laplacian 方差）≈ 333.7（数值越高通常越清晰）"
+          ],
+          "limitations": [
+            "模糊度指标受分辨率、噪声、锐化影响；仅作技术线索"
+          ],
+          "confidence": "medium"
+        },
+        {
+          "claim": "EXIF 元数据几乎为空",
+          "evidence": [
+            "来自EXIF：未提取到有效元数据（可能已被清除或为截图/网络图片）"
+          ],
+          "limitations": [
+            "EXIF 缺失不代表照片不真实，但失去一项验证手段"
+          ],
+          "confidence": "low"
+        },
+        {
+          "claim": "检测到可能的编辑痕迹提示",
+          "evidence": [
+            "来自EXIF：EXIF 元数据几乎为空（可能被清除或来自截图/网络图片）"
+          ],
+          "limitations": [
+            "软件标记可能被修改；仅作参考线索"
+          ],
+          "confidence": "low"
+        }
+      ]
+    },
+    "person": {
+      "detected": false,
+      "count": 0,
+      "height": "无法判断",
+      "body_type": "无法判断",
+      "posture": "不确定",
+      "evidence": {
+        "reference": "参照物：N/A（未检测到人物）",
+        "body_visibility": "全身：不可见（未检测到人物）",
+        "angle_impact": "角度影响：N/A（未检测到人物）"
+      },
+      "evidence_list": [
+        "来自检测：当前画面未检测到人物"
+      ],
+      "limitations": [
+        "无人物，无法进行体征分析"
+      ],
+      "confidence": "low"
+    }
+  },
+  "_meta": {
+    "model": "qwen-vl-max",
+    "model_success": true,
+    "local_engine": "yolo"
+  }
+}
