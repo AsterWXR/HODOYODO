@@ -65,22 +65,36 @@ async def health_check():
     return {"status": "ok", "model": "qwen-vl-plus"}
 
 
+# 静态文件服务（Docker部署时使用）
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    # 检查assets目录是否存在
+    assets_dir = os.path.join(static_dir, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    
+    @app.get("/")
+    async def serve_index():
+        index_path = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return {"message": "网恋安全卫士 API", "docs": "/docs"}
+    
+    @app.get("/{path:path}")
+    async def serve_static(path: str):
+        # 跳过 API 路径
+        if path.startswith("api/") or path == "health" or path == "docs" or path == "openapi.json":
+            return
+        file_path = os.path.join(static_dir, path)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        # 回退到 index.html (SPA)
+        index_path = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return {"error": "not found"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-else:
-    # Docker部署时挂载静态文件
-    static_dir = os.path.join(os.path.dirname(__file__), "static")
-    if os.path.exists(static_dir):
-        app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
-        
-        @app.get("/")
-        async def serve_index():
-            return FileResponse(os.path.join(static_dir, "index.html"))
-        
-        @app.get("/{path:path}")
-        async def serve_static(path: str):
-            file_path = os.path.join(static_dir, path)
-            if os.path.exists(file_path) and os.path.isfile(file_path):
-                return FileResponse(file_path)
-            return FileResponse(os.path.join(static_dir, "index.html"))
