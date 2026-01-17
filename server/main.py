@@ -3,8 +3,11 @@
 FastAPI 入口 - 网恋照片真实性验证与人物画像分析系统
 使用 Qwen VL 多模态模型进行图像分析
 """
+import os
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pipeline import analyze_image_bytes
 
 app = FastAPI(
@@ -15,7 +18,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,3 +68,19 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+else:
+    # Docker部署时挂载静态文件
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    if os.path.exists(static_dir):
+        app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
+        
+        @app.get("/")
+        async def serve_index():
+            return FileResponse(os.path.join(static_dir, "index.html"))
+        
+        @app.get("/{path:path}")
+        async def serve_static(path: str):
+            file_path = os.path.join(static_dir, path)
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                return FileResponse(file_path)
+            return FileResponse(os.path.join(static_dir, "index.html"))
