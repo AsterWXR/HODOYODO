@@ -8,7 +8,7 @@
 
 - Python 3.11+
 - Node.js 18+
-- 通义千问 API Key
+- OpenRouter API Key（用于 Gemini 3 多模态模型）
 
 ### 2. 后端启动
 
@@ -23,8 +23,12 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入你的 DASHSCOPE_API_KEY
+# Windows PowerShell:
+#   $env:OPENROUTER_API_KEY="你的key"
+#   $env:OPENROUTER_MODEL="google/gemini-3-pro-preview"  # 可选
+# macOS/Linux:
+#   export OPENROUTER_API_KEY="你的key"
+#   export OPENROUTER_MODEL="google/gemini-3-pro-preview"  # 可选
 
 # 启动服务
 python main.py
@@ -52,7 +56,7 @@ npm run build
 docker build -t hodoyodo .
 
 # 运行容器
-docker run -p 7860:7860 -e DASHSCOPE_API_KEY=你的key hodoyodo
+docker run -p 7860:7860 -e OPENROUTER_API_KEY=你的key hodoyodo
 ```
 
 ### 5. ModelScope 部署
@@ -60,7 +64,7 @@ docker run -p 7860:7860 -e DASHSCOPE_API_KEY=你的key hodoyodo
 1. 上传代码到 GitHub
 2. 在 ModelScope 创建 Studio
 3. 选择 Docker 部署，使用 `deploy.json` 配置
-4. 设置环境变量 `DASHSCOPE_API_KEY`
+4. 设置环境变量 `OPENROUTER_API_KEY`
 
 ## 项目结构
 
@@ -79,5 +83,6 @@ docker run -p 7860:7860 -e DASHSCOPE_API_KEY=你的key hodoyodo
 
 | 变量名 | 说明 | 必填 |
 |--------|------|------|
-| DASHSCOPE_API_KEY | 通义千问 API Key | ✅ |
+| OPENROUTER_API_KEY | OpenRouter API Key（Gemini 3） | ✅ |
+| OPENROUTER_MODEL | OpenRouter 模型名（默认 `google/gemini-3-pro-preview`） | ❌ |
 | PORT | 服务端口 | ❌ |

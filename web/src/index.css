@@ -5,6 +5,7 @@
 
 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
 /* Zpix 像素字体 */
 @font-face {
@@ -12,6 +13,12 @@
   src: url('https://cdn.jsdelivr.net/gh/SolidZORO/zpix-pixel-font@master/dist/Zpix.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
+}
+
+/* 自定义像素字体回退 */
+@font-face {
+  font-family: 'PixelFont';
+  src: local('VT323'), local('Press Start 2P'), local('Courier New');
 }
 
 :root {
@@ -27,6 +34,10 @@
   --text-dim: #606068;
   --border-gray: #3a3a42;
   --border-dashed: #585860;
+
+  /* 像素风格变量 */
+  --pixel-size: 4px;
+  --scanline-opacity: 0.03;
 }
 
 * {
@@ -45,6 +56,36 @@ body {
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: unset;
   text-rendering: optimizeSpeed;
+
+  /* CRT 扫描线效果 */
+  background-image: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, var(--scanline-opacity)) 2px,
+      rgba(0, 0, 0, var(--scanline-opacity)) 4px
+    );
+  background-attachment: fixed;
+}
+
+/* CRT 屏幕效果容器 */
+#root {
+  position: relative;
+  min-height: 100vh;
+}
+
+#root::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: 
+    radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.3) 100%);
+  pointer-events: none;
+  z-index: 9999;
 }
 
 .app {
@@ -1156,6 +1197,15 @@ body {
   font-size: 16px;
 }
 
+.error-message::before {
+  content: '[ ERROR ]';
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: var(--color-secondary);
+  margin-bottom: 8px;
+}
+
 /* ========== 空状态 ========== */
 .empty-state {
   text-align: center;
@@ -1218,4 +1268,256 @@ body {
   .body-stats {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --pixel-size: 3px;
+  }
+  
+  .title {
+    font-size: 18px;
+    letter-spacing: 2px;
+  }
+  
+  .subtitle {
+    font-size: 14px;
+  }
+  
+  .header::before,
+  .header::after {
+    content: '════════════════════';
+  }
+  
+  .upload-zone {
+    padding: 24px;
+  }
+  
+  .upload-icon {
+    font-size: 36px;
+  }
+  
+  .analyze-btn {
+    font-size: 12px;
+    padding: 12px 20px;
+  }
+  
+  .card-title {
+    font-size: 11px;
+  }
+  
+  .reliability-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==================== 装饰元素 ==================== */
+.corner-decoration {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: var(--pixel-size) solid var(--color-primary);
+}
+
+.corner-decoration.top-left {
+  top: -var(--pixel-size);
+  left: -var(--pixel-size);
+  border-right: none;
+  border-bottom: none;
+}
+
+.corner-decoration.top-right {
+  top: -var(--pixel-size);
+  right: -var(--pixel-size);
+  border-left: none;
+  border-bottom: none;
+}
+
+.corner-decoration.bottom-left {
+  bottom: -var(--pixel-size);
+  left: -var(--pixel-size);
+  border-right: none;
+  border-top: none;
+}
+
+.corner-decoration.bottom-right {
+  bottom: -var(--pixel-size);
+  right: -var(--pixel-size);
+  border-left: none;
+  border-top: none;
+}
+
+/* ==================== 滚动条像素化 ==================== */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-bright);
+  border: 2px solid var(--color-border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary-dim);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--color-bg);
+}
+
+/* ==================== 品牌列表 ==================== */
+.brands-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.brand-tag {
+  padding: 4px 8px;
+  background: var(--color-bg-tertiary);
+  border: 2px solid var(--color-border);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.brand-tag::before {
+  content: '◆ ';
+  color: var(--color-info);
+  font-size: 10px;
+}
+
+/* ==================== 网图检测详情 ==================== */
+.web-check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.web-check-item {
+  padding: 12px;
+  background: var(--color-bg-tertiary);
+  border: 2px solid var(--color-border);
+}
+
+.web-check-label {
+  font-size: 11px;
+  color: var(--color-text-dim);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.web-check-value {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.web-check-value.detected {
+  color: var(--color-secondary);
+}
+
+.web-check-value.safe {
+  color: var(--color-primary);
+}
+
+/* ==================== 终端风格文本 ==================== */
+.terminal-text {
+  font-family: 'VT323', monospace;
+  color: var(--color-primary);
+}
+
+.terminal-cursor {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  background: var(--color-primary);
+  animation: cursor-blink 1s steps(1) infinite;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ==================== 分隔线 ==================== */
+.pixel-divider {
+  height: var(--pixel-size);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-border) 0px,
+    var(--color-border) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  margin: 16px 0;
+}
+
+/* ==================== 错误状态 ==================== */
+.error-message {
+  background: rgba(255, 107, 107, 0.1);
+  border: var(--pixel-size) solid var(--color-secondary);
+  padding: 16px;
+  text-align: center;
+  margin: 16px 0;
+}
+
+.error-message::before {
+  content: '[ ERROR ]';
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: var(--color-secondary);
+  margin-bottom: 8px;
+}
+
+/* ==================== 折叠面板 ==================== */
+.collapsible {
+  border: var(--pixel-size) solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.collapsible-header {
+  background: var(--color-bg-tertiary);
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: var(--pixel-size) solid var(--color-border);
+}
+
+.collapsible-header:hover {
+  background: var(--color-bg-secondary);
+}
+
+.collapsible-icon {
+  font-family: 'VT323', monospace;
+  color: var(--color-primary);
+}
+
+.collapsible-icon.open::before {
+  content: '[-]';
+}
+
+.collapsible-icon.closed::before {
+  content: '[+]';
+}
+
+.collapsible-content {
+  padding: 16px;
+  background: var(--color-bg-secondary);
+}
+
+.collapsible-content.hidden {
+  display: none;
 }

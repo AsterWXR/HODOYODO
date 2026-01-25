@@ -175,31 +175,59 @@ def run_detection(image_bytes: bytes) -> Dict[str, Any]:
     主检测入口
     优先使用 YOLO（如已安装），否则回退到 HOG
     """
-    bgr = _decode_to_bgr(image_bytes)
-    dims = _get_image_dimensions(image_bytes)
-    h, w = dims["height"], dims["width"]
+    try:
+        bgr = _decode_to_bgr(image_bytes)
+        dims = _get_image_dimensions(image_bytes)
+        h, w = dims["height"], dims["width"]
+    except Exception as e:
+        # 图片解码失败，返回空结果
+        return {
+            "engine": "unknown",
+            "persons": [],
+            "objects": [],
+            "reference_objects": [],
+            "person_visibility": {"visibility": "不可见", "detail": f"图片解码失败: {str(e)}"},
+            "image_dims": {"width": 0, "height": 0},
+            "_error": str(e)
+        }
 
-    # 优先尝试 YOLO
-    yolo = _try_yolo_detect(bgr)
-    if yolo is not None:
-        # 添加参照物筛选
-        yolo["reference_objects"] = [
-            o for o in yolo["objects"] 
-            if o["label"] in COCO_REFERENCE_HINTS
-        ]
-        # 添加人物可见性分析
-        yolo["person_visibility"] = _analyze_person_visibility(yolo["persons"], h)
-        yolo["image_dims"] = dims
-        return yolo
+    try:
+        # 优先尝试 YOLO
+        yolo = _try_yolo_detect(bgr)
+        if yolo is not None:
+            # 添加参照物筛选
+            yolo["reference_objects"] = [
+                o for o in yolo["objects"] 
+                if o["label"] in COCO_REFERENCE_HINTS
+            ]
+            # 添加人物可见性分析
+            yolo["person_visibility"] = _analyze_person_visibility(yolo["persons"], h)
+            yolo["image_dims"] = dims
+            return yolo
+    except Exception as e:
+        # YOLO 检测失败，继续尝试 HOG
+        pass
 
-    # 回退到 HOG（仅检测人物）
-    persons = _hog_person_detect(bgr)
-    
-    return {
-        "engine": "hog",
-        "persons": persons,
-        "objects": [],
-        "reference_objects": [],
-        "person_visibility": _analyze_person_visibility(persons, h),
-        "image_dims": dims,
-    }
+    try:
+        # 回退到 HOG（仅检测人物）
+        persons = _hog_person_detect(bgr)
+        
+        return {
+            "engine": "hog",
+            "persons": persons,
+            "objects": [],
+            "reference_objects": [],
+            "person_visibility": _analyze_person_visibility(persons, h),
+            "image_dims": dims,
+        }
+    except Exception as e:
+        # HOG 检测也失败，返回空结果
+        return {
+            "engine": "unknown",
+            "persons": [],
+            "objects": [],
+            "reference_objects": [],
+            "person_visibility": {"visibility": "不可见", "detail": f"检测失败: {str(e)}"},
+            "image_dims": dims,
+            "_error": str(e)
+        }

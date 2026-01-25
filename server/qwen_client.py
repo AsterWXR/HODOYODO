@@ -1,26 +1,18 @@
 # server/qwen_client.py
 """
-Qwen VL 多模态模型客户端
-使用通义千问视觉语言模型进行图像分析
+Gemini 3 多模态模型客户端（通过 OpenRouter API）
 """
 import os
 import base64
 import json
+import requests
 from typing import Any, Dict, Optional
-import dashscope
-from dashscope import MultiModalConversation
-from dashscope.api_entities.dashscope_response import Role
 
-# 从环境变量读取 API Key，也可以直接设置
-# export DASHSCOPE_API_KEY="your-api-key"
-dashscope.api_key = os.getenv("DASHSCOPE_API_KEY", "sk-8d685168110942009978c8f86c700bbf")
-
-# 默认模型：qwen-vl-plus（性价比高）或 qwen-vl-max（效果最好）
-DEFAULT_MODEL = "qwen-vl-max"
+DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-3-pro-preview")
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
-def _image_to_base64(image_bytes: bytes, mime: str = "image/jpeg") -> str:
-    """将图片字节转为 base64 data URL"""
+def _image_to_base64_url(image_bytes: bytes, mime: str = "image/jpeg") -> str:
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     return f"data:{mime};base64,{b64}"
 
@@ -32,407 +24,355 @@ async def analyze_with_qwen(
     extra_context: Optional[Dict[str, Any]] = None,
     target_gender: str = "boyfriend"
 ) -> Dict[str, Any]:
-    """
-    使用 Qwen VL 多模态模型分析图片
+    """使用 Gemini 3 分析图片，输出完整分析结果"""
     
-    Args:
-        image_bytes: 图片二进制数据
-        mime: 图片MIME类型
-        model: 使用的模型名称
-        extra_context: 额外上下文信息（如本地检测结果）
-        target_gender: 分析对象性别 ('boyfriend' 或 'girlfriend')
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+    if not openrouter_api_key:
+        return {"_success": False, "_error": "缺少 OPENROUTER_API_KEY", "_model": model}
     
-    Returns:
-        分析结果字典
-    """
-    
-    # 根据分析对象调整口语化输出风格
-    if target_gender == "boyfriend":
-        target_word = "男朋友"
-        opposite_items = "女性用品（化妆品、护肤品、女性饰品、女鞋、女性内衣等）"
-        suspect_hint = "这个情况有点微妙啊"
-    else:
-        target_word = "女朋友"
-        opposite_items = "男性用品（剃须刀、男士护肤品、领带、男鞋、男性衣物等）"
-        suspect_hint = "这个情况有点微妙啊"
+    target_word = "男朋友" if target_gender == "boyfriend" else "女朋友"
+    opposite = "女性用品" if target_gender == "boyfriend" else "男性用品"
 
-    # 构建分析提示词（严格约束输出格式和 evidence 要求）
-    system_prompt = f"""你是一个专业的照片分析专家，有过硬的先力学和痕迹学功底，负责帮助用户分析网恋场景中的照片真实性和人物特征，提供详细且准确的分析结果。
+    # 完整 prompt，输出详细分析结果
+    system_prompt = f"""你是一个专业的照片分析AI。请分析「{target_word}」发的照片，特别关注{opposite}相关的线索。
 
-【当前分析对象】
-用户正在分析「{target_word}」发送的照片，请重点关注是否有{opposite_items}出现。
+**重要：你必须严格按照以下JSON格式输出，不能省略任何字段，所有字段都必须有值。**
 
-【核心原则】
-1. 每条结论都必须有明确的 evidence（画面依据），无依据则输出"无法判断"
-2. 保持客观保守，不做过度推断
-3. 所有结论必须可追溯到画面中的具体元素
-
-【口语化总结风格要求】
-girlfriend_comments 字段要用朋友吐槽的语气，像在帮朋友分析{target_word}发的照片，特点：
-- 语气口语化、调侃，像聊天一样
-- 直接指出可疑点，比如"宝两个人的，床头柜的东西应该只在一边才对"
-- 根据画面实际内容分析，不要套用固定模板，每张照片都要量身定制
-- 可以用网络用语，比如"宝""朋友""这个有点意思"
-- 每条评论要基于画面中实际看到的内容，不要编造
-- 重点关注：物品数量异常、{opposite_items}、反光中的人影、物品摆放不符合一个人使用的特征等
-- 【禁止】不要使用任何脏话、粗口或不文明用语
-- 【禁止】不要死扣"护手霜""小镜子"等固定物品，要根据实际画面内容分析
-- 如果画面中没有可疑点，可以输出空数组[]或正面评价
-
-【人物体征估计规则】（必须严格遵守）
-- 身高：只能输出 "偏高/中等/偏矮/无法判断"
-- 体型：只能输出 "偏瘦/匀称/偏壮/无法判断"
-- 姿态：只能输出 "挚拔/放松/含胸/不确定"
-- 性别：只能输出 "男性/女性/无法判断"
-
-【局部特征判断体态规则】（重要！只要能看到身体任何部分，就要积极判断体型）
-
-★★★ 核心原则：只要看到了手、胳膊、身体、脸部等任何可见部位，就必须给出体型判断（偏瘦/匀称/偏壮），不要轻易输出"无法判断" ★★★
-
-1. 手部特征（重要线索）：
-   - 手指粗细：手指纤细修长倾向偏瘦，手指短粗有肉感倾向偏壮
-   - 手腕粗细：手腕纤细可见骨骼倾向偏瘦，手腕圆润有肉感倾向偏壮
-   - 手背肉感：手背平坦青筋可见倾向偏瘦，手背圆润有肉倾向偏壮
-   - 指节特征：指节明显倾向偏瘦，指节不明显有肉感倾向偏壮
-
-2. 手臂特征（可以直接判断体型）：
-   - 手臂线条：手臂纤细线条分明→偏瘦，手臂圆润有肉感→偏壮
-   - 手臂粗细：手臂显得细→偏瘦，手臂显得粗→偏壮
-   - 上臂肉感：上臂松弛有赘肉→偏壮，上臂紧致→偏瘦或匀称
-
-3. 身体/躺体特征（可以直接判断体型）：
-   - 体型轮廓：身体线条纤细→偏瘦，身体圆润有肉感→偏壮
-   - 腰部、股部、体态等都是重要线索
-   - 即使穿着衣服，也可以从轮廓判断大致体型
-
-4. 脸部特征：
-   - 脸型：脸部瘦削颛骨明显倾向偏瘦，脸部圆润有肉感倾向偏壮
-   - 下巴线条：下巴尖锐线条分明倾向偏瘦，双下巴或下巴圆润倾向偏壮
-   - 脸部轮廓：轮廓分明倾向偏瘦，轮廓柔和倾向偏壮
-
-5. 颈部/肩部特征：
-   - 颈部：颈部修长锁骨明显倾向偏瘦，颈部短粗倾向偏壮
-   - 肩部：肩部线条分明倾向偏瘦，肩部圆润有肉感倾向偏壮
-
-6. 判断原则：
-   - 【最重要】只要能看到以上任何一个部位，就必须给出体型判断（偏瘦/匀称/偏壮）
-   - 体型判断不需要参照物或全身可见，局部特征就足够
-   - 多个局部特征一致时可提高置信度
-   - 仅当完全看不到任何身体部位时，才输出“无法判断”
-   - 如果能看到身体但没有明显胖瘦特征，默认输出“匀称”
-
-【性别判断规则】（结合外观特征和环境习惯综合判断）
-1. 直接外观线索（权重高）：
-   - 面部特征：胡须、喉结、妆容等
-   - 发型：长发/短发/发型风格
-   - 服饰：裙装/西装/风格倾向
-   - 体态：肩宽比例、身形曲线等
-
-2. 环境习惯线索（辅助判断）：
-   - 女性常见物品：化妆品、护肤品、发卡发圈、女性饰品、高跟鞋、女性内衣等
-   - 男性常见物品：剃须刀、男士护肤品、领带、男性手表、男鞋等
-   - 装饰风格：粉色系/可爱风格倾向女性，深色系/简约风格中性
-   - 卫浴用品：化妆镜、美妆工具等倾向女性
-
-3. 判断原则：
-   - 优先依据直接外观特征
-   - 环境线索作为辅助佐证
-   - 多个线索指向一致时可提高置信度
-   - 线索矛盾或不足时必须输出"无法判断"
-
-【人物体征 evidence 必须包含三要素】
-- 参照物：画面中可用于参照的物体（如门框、椅子、桌子、瓶子等），无则写“无明显参照物”
-- 全身：是否可见全身轮廓（“可见全身”/“仅上半身”/“仅头肩”/“不可见”）
-- 角度影响：拍摄角度对判断的影响（“正面平视/影响小”/“俯拍/影响大”/“仰拍/影响大”/“无法判断”）
-
-【重要】evidence 三要素与不同判断的关系：
-- 身高判断：需要完整的 evidence 三要素，缺少则输出"无法判断"
-- 体型判断：★不需要完整 evidence★，只要能看到任何身体部位（手/胳膊/脸/身体等）就必须给出判断
-- 姿态判断：需要可见身体部分
-
-【输出JSON格式】
+输出完整JSON：
 ```json
 {{
   "person": {{
-    "detected": true/false,
-    "count": 数字,
+    "detected": bool,
+    "count": int,
     "height": "偏高/中等/偏矮/无法判断",
-    "body_type": "偏瘦/匀称/偏壮/无法判断", 
-    "posture": "挚拔/放松/含胸/不确定",
+    "body_type": "偏瘦/匀称/偏壮/无法判断",
+    "posture": "挺拔/放松/含胸/不确定",
     "gender": "男性/女性/无法判断",
     "gender_evidence": {{
-      "appearance": "外观线索：面部/发型/服饰/体态等直接特征",
-      "environment": "环境线索：化妆品/剃须刀/饰品等物品线索",
-      "consistency": "线索一致性：多个线索是否指向同一结论"
+      "appearance": "外观线索描述",
+      "environment": "环境线索描述",
+      "consistency": "线索一致性说明"
     }},
     "evidence": {{
-      "reference": "参照物：...",
-      "body_visibility": "全身：...",
-      "angle_impact": "角度影响：..."
+      "reference": "参照物描述",
+      "body_visibility": "全身可见性描述",
+      "angle_impact": "角度影响说明"
     }},
     "partial_features": {{
-      "hand": "手部特征：手指/手腕/手背特征描述，无则写'未见手部'",
-      "arm": "手臂特征：手臂线条/肥瘦/肌肉特征（如细、粗、圆润、纹细等），无则写'未见手臂'",
-      "body": "身体特征：身体轮廓/腰部/胸部/背部等特征（如纳细、圆润、有肉等），无则写'未见身体'",
-      "face": "脸部特征：脸型/下巴/轮廓特征（如圆脸、瘦脸、双下巴等），无则写'未见脸部'",
-      "neck_shoulder": "颈肩特征：颈部/肩部/锁骨特征，无则写'未见颈肩'",
-      "body_type_clue": "体型综合判断：基于以上局部特征给出体型结论（偏瘦/匀称/偏壮），必须给出判断"
+      "hand": "手部特征",
+      "arm": "手臂特征",
+      "face": "脸部特征",
+      "neck_shoulder": "颈肩特征",
+      "body": "身体特征",
+      "body_type_clue": "体型综合判断"
     }},
-    "confidence": "low/medium/high"
+    "confidence": "high/medium/low"
   }},
-  "lifestyle": {{
-    "claim": "关于生活方式/消费水平的结论或无法判断",
-    "consumption_level": "高消费/中等消费/大众消费/无法判断",
-    "accommodation_level": "高档酒店/中档酒店/经济型酒店/租房自住/无法判断",
-    "brands_detected": {{
-      "clothing": ["识别到的服装品牌"],
-      "accessories": ["识别到的配饰/包袋/手表品牌"],
-      "electronics": ["识别到的电子产品品牌"],
-      "skincare": ["识别到的护肤品/化妆品品牌"],
-      "other": ["其他识别到的品牌"]
-    }},
-    "evidence": ["来自画面：具体依据1", "来自画面：具体依据2"],
-    "limitations": ["局限性说明"],
-    "confidence": "low/medium"
+  "web_image_check": {{
+    "risk_level": "high/medium/low",
+    "watermark": "水印描述或null",
+    "screenshot": "截图痕迹或null",
+    "professional": "专业摄影特征或null"
   }},
   "scene": {{
-    "location_type": "室内/室外/无法判断",
-    "environment": "具体环境描述",
-    "evidence": ["来自画面：具体依据"],
-    "confidence": "low/medium"
+    "location": "室内/室外",
+    "desc": "详细环境描述"
+  }},
+  "lifestyle": {{
+    "level": "高/中/大众/无法判断",
+    "brands": ["品牌列表"]
   }},
   "room_analysis": {{
-    "inferred_people_count": "根据环境推断的人数（如：1人/2人/多人/无法判断）",
-    "relationship_hint": "关系推断（如：独居/情侣/家庭/合租/无法判断）",
-    "evidence": [
-      "来自环境：具体依据（如餐具数量、座位数、拖鞋双数、牙刷数量等）"
-    ],
-    "clues": {{
-      "tableware": "餐具/杯子数量线索",
-      "seating": "座位/椅子数量线索",
-      "personal_items": "个人物品线索（如拖鞋、牙刷、毛巾等）",
-      "decoration": "装饰风格线索（如情侣照、儿童用品等）",
-      "space_layout": "空间布局线索（如床铺大小、房间数量等）"
-    }},
-    "limitations": ["环境推断存在较大不确定性，仅供参考"],
-    "confidence": "low/medium"
+    "people": "1/2/无法判断",
+    "relation": "独居/情侣/无法判断",
+    "evidence": "详细依据"
   }},
-  "objects": {{
-    "detected": ["检测到的物体列表"],
-    "brands": ["识别到的品牌（如有）"],
-    "evidence": ["来自画面：具体依据"]
-  }},
-  "intention": {{
-    "claim": "照片用途倾向判断或无法判断",
-    "evidence": ["来自构图/画面：具体依据"],
-    "confidence": "low/medium"
-  }},
+  "objects": ["检测到的物体列表"],
   "details": {{
-    "text_detected": ["画面中识别到的文字"],
-    "text_type": "印刷体/手写体/混合/无文字",
-    "text_source": "文字来源（菜单/书籍/标牌/产品包装/手写便签等）",
-    "special_elements": ["特殊元素如反光、水印等"],
-    "evidence": ["来自画面：具体依据"]
+    "text": ["识别到的文字列表"],
+    "special": ["特殊元素列表"]
   }},
-  "girlfriend_comments": [
-    "朋友风格的可疑点吐槽1，基于画面中的具体物品/细节",
-    "朋友风格的可疑点吐槽2，基于画面中的具体物品/细节",
-    "如果没有可疑点则输出空数组[]"
-  ]
+  "intention": "照片用途详细说明",
+  "girlfriend_comments": ["可疑点吐槽列表"]
 }}
 ```
 
-【环境推断人数和关系规则】
-- 必须基于画面中可见的物品数量/布局进行推断
-- 常见线索：餐具数量、座位数、拖鞋双数、牙刷数量、床铺大小、个人物品风格等
-- 如线索不足或相互矛盾，必须输出"无法判断"
-- clues 中每个字段如无相关线索，填写"未见相关线索"
-- 【重要】室外场景不进行室内物品分析：
-  * 如果 scene.location_type 为"室外"，room_analysis 中的所有 clues 应输出"不适用（室外场景）"
-  * 室外场景不应检查拖鞋、牙刷、餐具、床铺等室内物品
-  * 室外场景的 inferred_people_count 和 relationship_hint 应输出"不适用"
+规则：
+1. 水印/截图/专业摄影是网图高风险线索
+2. 看到人体任何部位就给体型判断，默认匀称
+3. girlfriend_comments用口语化吐槽，如"宝这图有点意思"
+4. 无依据输出"无法判断"
+5. **必须输出完整的JSON，包含所有字段，不能省略任何字段**
+6. **所有字段都必须有值，不能为null或空**
+7. **只输出JSON，不要任何其他文字、解释或说明**
+8. **确保JSON格式正确，可以直接被解析**"""
 
-【环境档次与生活水准判断规则】
-1. 酒店/住宿档次判断：
-   - 高档：五星级酒店特征（精致装修、高级客房用品、大理石/真皮材质、浴缸或独立淋浴间、欧舒丹/欧莱雅等高端洗护品）
-   - 中档：连锁商务酒店特征（标准化装修、正规客房用品、常见品牌洗护品）
-   - 经济型：快捷酒店特征（简约装修、基础配置、一次性用品、蓝白色调等）
-   - 租房/自住：个人化物品多、长期居住特征
-
-2. 服装品牌判断：
-   - 奢侈品：LV、Gucci、Chanel、Hermes、Prada等可识别标志
-   - 轻奢：Coach、MK、Kate Spade、Tory Burch等
-   - 运动品牌：Nike、Adidas、Lululemon、Under Armour等
-   - 快时尚：Zara、H&M、优衣库等
-   - 无明显品牌特征则输出"未识别到品牌"
-
-3. 用品品牌判断：
-   - 电子产品：iPhone/安卓、Mac/Windows、AirPods等
-   - 护肤品：La Mer、SK-II、雅诗兰黛（高端）；兰蔻、雅漾（中端）；大宝、美加净（大众）
-   - 包袋、手表、饰品等奢侈品标志
-   - 注意：只有明确看到品牌标志才能判断，不要猜测
-
-4. 生活水准综合推断：
-   - 高消费：多个奢侈品、高档酒店、高端电子产品
-   - 中等消费：中档酒店、运动品牌、中端护肤品
-   - 大众消费：经济型酒店、快时尚、基础用品
-   - 无法判断：线索不足时必须输出此结果
-
-【场景判断规则】（室内/室外识别，特别注意夜景场景）
-
-★★★ 核心原则：夜景不等于室内！黑暗/灯光环境也可能是室外夜景 ★★★
-
-1. 室外特征（白天或夜间）：
-   - 天空元素：可见天空（蓝天/云彩/夕阳/星空/月亮等）
-   - 远景元素：远处建筑物、山脉、地平线、城市天际线
-   - 户外设施：路灯、交通信号灯、电线杆、户外广告牌
-   - 道路元素：马路、人行道、斑马线、车辆、自行车
-   - 自然元素：树木、草地、花园、河流、海边
-   - 建筑外观：建筑物外墙、门店招牌、外立面
-   - 夜景特有：城市灯光、霓虹灯、路灯照明、车灯轨迹
-
-2. 室内特征：
-   - 顶部元素：天花板、吊灯、室内照明设备、吊顶
-   - 地面元素：地板、地毯、瓷砖
-   - 墙面元素：室内墙壁、墙纸、室内装饰画
-   - 家具设施：床、沙发、桌椅、衣柜、电视柜等家具
-   - 室内专属：窗帘（从内侧看）、室内植物盆栽、空调内机
-
-3. 夜景室外判断要点（重要！避免误判为室内）：
-   - 【关键】即使画面较暗、有人工灯光，也要检查是否有天空/远景
-   - 【关键】路灯、霓虹灯、户外广告灯光 → 室外夜景
-   - 【关键】能看到远处建筑/天际线 → 室外
-   - 【关键】无天花板遮挡、头顶是开放空间 → 室外
-   - 餐厅露台/阳台：有露天元素（能看到天空或远景）→ 室外
-
-4. 易混淆场景处理：
-   - 落地窗旁：看窗外还是窗内？人物所在位置决定
-   - 阳台/露台：有顶棚但开放 → 视为半室外或室外
-   - 车内：封闭空间但属于移动载具 → 标注为"车内"
-   - 地下空间：停车场、地铁站 → 室内
-
-5. 判断原则：
-   - 有天空可见（包括夜空）→ 优先判断为室外
-   - 有远景/地平线可见 → 优先判断为室外
-   - 有明确天花板 → 室内
-   - 不确定时输出"无法判断"
-
-【文字识别规则】
-- 印刷体：菜单、书籍、标牌、产品包装、价签、广告、画册等规整印刷的文字
-- 手写体：手写便签、笔记、签名、涂鸦等不规整的手写文字
-- 注意：菜单上的文字是印刷体，不是手写体！请准确区分
-
-【重要提醒】
-- 如果某项无法从画面获得依据，必须明确输出"无法判断"
-- evidence 必须指向画面中的具体元素，不能是推测
-- 不要编造或臆测画面中不存在的内容
-- 【体型判断 - 核心规则】
-  * 只要能看到人物的任何部位（手/胳膊/脸/身体/颈肩等），就必须给出体型判断
-  * body_type 字段只能输出"偏瘦"/"匀称"/"偏壮"三选一，禁止输出其他描述性文字
-  * 全身照/半身照必须给出体型判断，不允许输出"无法判断"
-  * 如果没有明显胖瘦特征，默认输出"匀称"
-  * 只有完全看不到任何人物时，才可以输出「无法判断」"""
-
-    # 构建用户消息
-    user_prompt = "请分析这张照片，按照要求输出JSON格式的分析结果。只输出JSON，不要有其他文字。"
-    
-    # 如果有额外上下文（如本地检测结果），加入提示
+    image_url = _image_to_base64_url(image_bytes, mime)
+    user_text = "请仔细分析这张照片，严格按照上述JSON格式输出完整结果。必须包含所有字段，不能省略。"
     if extra_context:
-        context_str = json.dumps(extra_context, ensure_ascii=False)
-        user_prompt += f"\n\n【辅助信息】本地检测器提供的参考：{context_str}"
+        user_text += f"\n辅助信息：{json.dumps(extra_context, ensure_ascii=False)}"
 
-    # 构建消息
-    image_url = _image_to_base64(image_bytes, mime)
-    
+    # OpenRouter/Gemini 使用 OpenAI 兼容格式
     messages = [
-        {
-            "role": "system",
-            "content": [{"text": system_prompt}]
-        },
-        {
-            "role": "user",
-            "content": [
-                {"image": image_url},
-                {"text": user_prompt}
-            ]
-        }
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": [
+            {"type": "text", "text": user_text},
+            {"type": "image_url", "image_url": {"url": image_url}}
+        ]}
     ]
-    
+
     try:
-        # 调用 Qwen VL API
-        response = MultiModalConversation.call(
-            model=model,
-            messages=messages,
+        resp = requests.post(
+            OPENROUTER_API_URL,
+            headers={
+                "Authorization": f"Bearer {openrouter_api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/your-repo",  # OpenRouter 推荐
+                "X-Title": "Watcha Security"  # OpenRouter 推荐（使用英文避免编码问题）
+            },
+            json={"model": model, "messages": messages, "temperature": 0.0},
+            timeout=120
         )
         
-        if response.status_code == 200:
-            content = response.output.choices[0].message.content
-            # content 可能是 list 或 str
-            if isinstance(content, list):
-                text = "".join([item.get("text", "") for item in content if isinstance(item, dict)])
-            else:
-                text = str(content)
-            
-            # 尝试解析 JSON
-            result = _parse_json_response(text)
-            result["_raw_response"] = text
-            result["_model"] = model
-            result["_success"] = True
-            return result
+        if not resp.ok:
+            return {"_success": False, "_error": f"HTTP {resp.status_code}", "_raw_response": resp.text[:500], "_model": model}
+
+        data = resp.json()
+        content = ""
+        try:
+            content = data.get("choices", [])[0].get("message", {}).get("content", "")
+        except:
+            pass
+
+        if not content:
+            return {"_success": False, "_error": "empty response", "_raw_response": resp.text[:500], "_model": model}
+
+        # 去除代码块包裹，支持多种格式
+        import re
+        # 尝试提取代码块中的 JSON
+        m = re.search(r"```(?:json)?\s*(.*?)```", content, re.S)
+        if m:
+            content = m.group(1).strip()
         else:
+            # 如果没有代码块，尝试直接提取 JSON 对象
+            # 查找第一个 { 到最后一个 } 之间的内容
+            first_brace = content.find('{')
+            last_brace = content.rfind('}')
+            if first_brace >= 0 and last_brace > first_brace:
+                content = content[first_brace:last_brace+1].strip()
+
+        # 解析 JSON
+        try:
+            parsed = json.loads(content)
+            
+            # 转换模型输出格式到完整格式（兼容完整和精简格式）
+            result = _expand_compact_result(parsed)
+            result["_success"] = True
+            result["_model"] = model
+            result["_raw_response"] = content
+            # 添加调试信息：检查关键字段是否存在
+            missing_fields = []
+            if not result.get("person"):
+                missing_fields.append("person")
+            if not result.get("web_image_check"):
+                missing_fields.append("web_image_check")
+            if not result.get("scene"):
+                missing_fields.append("scene")
+            if not result.get("lifestyle"):
+                missing_fields.append("lifestyle")
+            if missing_fields:
+                result["_missing_fields"] = missing_fields
+            return result
+        except json.JSONDecodeError as e:
+            # 尝试修复截断的 JSON
+            try:
+                last_brace = content.rfind('}')
+                if last_brace > 0:
+                    partial = json.loads(content[:last_brace+1])
+                    result = _expand_compact_result(partial)
+                    result["_success"] = True
+                    result["_model"] = model
+                    result["_partial"] = True
+                    result["_raw_response"] = content[:500]
+                    return result
+            except Exception as e2:
+                pass
+            # 返回错误信息，包含原始响应以便调试
             return {
-                "_success": False,
-                "_error": f"API调用失败: {response.code} - {response.message}",
+                "_success": False, 
+                "_error": f"JSON parse error: {e}", 
+                "_raw_response": content[:1000],  # 增加长度以便调试
                 "_model": model
             }
-            
+
     except Exception as e:
-        return {
-            "_success": False,
-            "_error": f"调用异常: {str(e)}",
-            "_model": model
-        }
+        return {"_success": False, "_error": str(e), "_model": model}
 
 
-def _parse_json_response(text: str) -> Dict[str, Any]:
-    """从模型响应中提取并解析 JSON"""
-    # 尝试直接解析
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+def _expand_compact_result(compact: Dict[str, Any]) -> Dict[str, Any]:
+    """将模型输出格式转换为完整格式，兼容 pipeline.py"""
     
-    # 尝试从 markdown 代码块提取
-    import re
-    json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
-    if json_match:
-        try:
-            return json.loads(json_match.group(1))
-        except json.JSONDecodeError:
-            pass
-    
-    # 尝试找到 { } 包裹的内容
-    brace_match = re.search(r'\{[\s\S]*\}', text)
-    if brace_match:
-        try:
-            return json.loads(brace_match.group(0))
-        except json.JSONDecodeError:
-            pass
-    
-    # 解析失败，返回空结构
-    return {
-        "_parse_error": True,
-        "_raw_text": text
+    # person 转换
+    person = compact.get("person", {})
+    expanded_person = {
+        "detected": person.get("detected", False),
+        "count": person.get("count", 0),
+        "height": person.get("height", "无法判断"),
+        "body_type": person.get("body_type", "无法判断"),
+        "posture": person.get("posture", "不确定"),
+        "gender": person.get("gender", "无法判断"),
+        "gender_evidence": person.get("gender_evidence", {
+            "appearance": "无",
+            "environment": "无",
+            "consistency": "无"
+        }),
+        "evidence": person.get("evidence", {}) if isinstance(person.get("evidence"), dict) else {
+            "reference": "无",
+            "body_visibility": "无",
+            "angle_impact": "无"
+        },
+        "partial_features": person.get("partial_features", {}),
+        "confidence": person.get("confidence", "low")
     }
-
-
-# 同步版本（如果需要）
-def analyze_with_qwen_sync(
-    image_bytes: bytes,
-    mime: str = "image/jpeg",
-    model: str = DEFAULT_MODEL,
-    extra_context: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """同步版本的 Qwen VL 分析"""
-    import asyncio
-    return asyncio.run(analyze_with_qwen(image_bytes, mime, model, extra_context))
+    
+    # web_image_check 转换
+    web = compact.get("web_image_check", {})
+    expanded_web = {
+        "risk_level": web.get("risk_level", "无法判断"),
+        "is_likely_web_image": web.get("risk_level") == "high",
+        "watermark": {
+            "detected": bool(web.get("watermark")),
+            "platform": web.get("watermark") if web.get("watermark") else None,
+            "location": None,
+            "evidence": web.get("watermark", "")
+        },
+        "screenshot_traces": {
+            "detected": bool(web.get("screenshot")),
+            "type": web.get("screenshot") if web.get("screenshot") else "无",
+            "evidence": web.get("screenshot", "")
+        },
+        "professional_photo": {
+            "detected": bool(web.get("professional")),
+            "features": [web.get("professional")] if web.get("professional") else [],
+            "evidence": web.get("professional", "")
+        },
+        "image_quality_issues": {"compression_artifacts": False, "resolution_mismatch": False, "aspect_ratio_abnormal": False, "evidence": ""},
+        "influencer_style": {"detected": False, "features": [], "evidence": ""},
+        "temporal_inconsistency": {"detected": False, "evidence": ""},
+        "conclusion": f"风险等级: {web.get('risk_level', '无法判断')}",
+        "recommendation": "建议使用百度识图验证" if web.get("risk_level") == "high" else None
+    }
+    
+    # scene 转换
+    scene = compact.get("scene", {})
+    expanded_scene = {
+        "location_type": scene.get("location", "无法判断"),
+        "environment": scene.get("desc", ""),
+        "evidence": [scene.get("desc", "")] if scene.get("desc") else [],
+        "confidence": "medium"
+    }
+    
+    # lifestyle 转换
+    lifestyle = compact.get("lifestyle", {})
+    brands_raw = lifestyle.get("brands", [])
+    # 确保 brands 是列表
+    if not isinstance(brands_raw, list):
+        brands_raw = []
+    
+    expanded_lifestyle = {
+        "claim": f"消费水平: {lifestyle.get('level', '无法判断')}",
+        "consumption_level": lifestyle.get("level", "无法判断"),
+        "accommodation_level": lifestyle.get("accommodation_level", "无法判断"),
+        "brands_detected": {
+            "clothing": brands_raw,  # 暂时全部放在 clothing，后续可以分类
+            "accessories": [],
+            "electronics": [],
+            "skincare": [],
+            "other": []
+        },
+        "evidence": [],
+        "limitations": [],
+        "confidence": "low"
+    }
+    
+    # room_analysis 转换
+    room = compact.get("room_analysis", {})
+    room_evidence = room.get("evidence", "")
+    # 处理 evidence 可能是字符串或列表的情况
+    if isinstance(room_evidence, str):
+        room_evidence_list = [room_evidence] if room_evidence else []
+    elif isinstance(room_evidence, list):
+        room_evidence_list = room_evidence
+    else:
+        room_evidence_list = []
+    
+    expanded_room = {
+        "inferred_people_count": room.get("people", "无法判断"),
+        "relationship_hint": room.get("relation", "无法判断"),
+        "evidence": room_evidence_list,
+        "clues": {},
+        "limitations": ["环境推断存在不确定性"],
+        "confidence": "low"
+    }
+    
+    # objects 转换
+    objects_raw = compact.get("objects", [])
+    # 处理 objects 可能是字符串或其他格式的情况
+    if isinstance(objects_raw, list):
+        objects_list = objects_raw
+    elif isinstance(objects_raw, str):
+        objects_list = [objects_raw] if objects_raw else []
+    else:
+        objects_list = []
+    
+    expanded_objects = {
+        "detected": objects_list,
+        "brands": [],
+        "evidence": []
+    }
+    
+    # details 转换
+    details = compact.get("details", {})
+    # 处理 details 可能是字符串的情况（向后兼容）
+    if isinstance(details, str):
+        details = {}
+    text_list = details.get("text", [])
+    if not isinstance(text_list, list):
+        text_list = []
+    special_list = details.get("special", [])
+    if not isinstance(special_list, list):
+        special_list = []
+    
+    expanded_details = {
+        "text_detected": text_list,
+        "text_type": "混合" if text_list else "无文字",
+        "text_source": "",
+        "special_elements": special_list,
+        "evidence": []
+    }
+    
+    # intention 转换
+    intention = compact.get("intention", "")
+    if isinstance(intention, dict):
+        # 如果 intention 是字典，提取 claim
+        intention_claim = intention.get("claim", intention.get("intention", "无法判断"))
+    else:
+        intention_claim = intention if isinstance(intention, str) else "无法判断"
+    
+    expanded_intention = {
+        "claim": intention_claim,
+        "evidence": [],
+        "confidence": "low"
+    }
+    
+    return {
+        "person": expanded_person,
+        "web_image_check": expanded_web,
+        "scene": expanded_scene,
+        "lifestyle": expanded_lifestyle,
+        "room_analysis": expanded_room,
+        "objects": expanded_objects,
+        "details": expanded_details,
+        "intention": expanded_intention,
+        "girlfriend_comments": compact.get("girlfriend_comments", [])
+    }

@@ -1,14 +1,20 @@
 # server/main.py
 """
 FastAPI 入口 - 网恋照片真实性验证与人物画像分析系统
-使用 Qwen VL 多模态模型进行图像分析
+使用 Gemini 3 多模态模型进行图像分析
 """
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pipeline import analyze_image_bytes
+
+# 加载 .env 文件
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(
     title="网恋安全卫士",
@@ -48,21 +54,31 @@ async def analyze(
     - person: 人物体征估计
     - girlfriend_comments: 口语化吐槽分析
     """
-    if image.content_type not in ALLOWED_MIME:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+    try:
+        if image.content_type not in ALLOWED_MIME:
+            raise HTTPException(status_code=400, detail="Unsupported file type")
 
-    data = await image.read()
-    if len(data) > MAX_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+        data = await image.read()
+        if len(data) > MAX_SIZE_BYTES:
+            raise HTTPException(status_code=400, detail="File too large (max 5MB)")
 
-    result = await analyze_image_bytes(data, mime=image.content_type, target_gender=target_gender)
-    return result
+        result = await analyze_image_bytes(data, mime=image.content_type, target_gender=target_gender)
+        return result
+    except HTTPException:
+        # 重新抛出 HTTP 异常
+        raise
+    except Exception as e:
+        # 捕获其他未预期的异常
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 @app.get("/health")
 async def health_check():
     """健康检查接口"""
-    return {"status": "ok", "model": "qwen-vl-plus"}
+    return {"status": "ok", "provider": "openrouter", "model": os.getenv("OPENROUTER_MODEL", "google/gemini-3-pro-preview")}
 
 
 # 静态文件服务（Docker部署时使用）
@@ -85,14 +101,22 @@ if os.path.exists(static_dir):
         # 跳过 API 路径
         if path.startswith("api/") or path == "health" or path == "docs" or path == "openapi.json":
             return
-        file_path = os.path.join(static_dir, path)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        # 回退到 index.html (SPA)
-        index_path = os.path.join(static_dir, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-        return {"error": "not found"}
+        try:
+            file_path = os.path.join(static_dir, path)
+            # 安全检查：防止路径遍历攻击
+            file_path = os.path.normpath(file_path)
+            if not file_path.startswith(os.path.normpath(static_dir)):
+                return {"error": "Invalid path"}
+            
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                return FileResponse(file_path)
+            # 回退到 index.html (SPA)
+            index_path = os.path.join(static_dir, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            return {"error": "not found"}
+        except Exception as e:
+            return {"error": f"Internal error: {str(e)}"}
 
 
 if __name__ == "__main__":

@@ -189,10 +189,10 @@ def _build_evidence_from_context(
         obj_names = list(set([o["label"] for o in reference_objects[:5]]))
         evidence["reference"] = f"参照物：检测到 {', '.join(obj_names)}（来自{det.get('engine', 'unknown')}检测）"
     else:
-        # 尝试从 Qwen 结果获取
+        # 尝试从 Gemini 3 结果获取
         qwen_objects = qwen_result.get("objects", {}).get("detected", [])
         if qwen_objects:
-            evidence["reference"] = f"参照物：Qwen 识别到 {', '.join(qwen_objects[:5])}"
+            evidence["reference"] = f"参照物：Gemini 3 识别到 {', '.join(qwen_objects[:5])}"
         else:
             evidence["reference"] = "参照物：未检测到明显参照物（无法进行尺寸对比）"
     
@@ -202,18 +202,21 @@ def _build_evidence_from_context(
     detail = person_visibility.get("detail", "")
     evidence["body_visibility"] = f"全身：{visibility}（{detail}）" if detail else f"全身：{visibility}"
     
-    # 从 Qwen 结果补充
+    # 从 Gemini 3 结果补充
     qwen_person = qwen_result.get("person", {})
     qwen_evidence = qwen_person.get("evidence", {})
-    if qwen_evidence.get("body_visibility"):
+    # 确保 qwen_evidence 是字典类型
+    if not isinstance(qwen_evidence, dict):
+        qwen_evidence = {}
+    if isinstance(qwen_evidence, dict) and qwen_evidence.get("body_visibility"):
         evidence["body_visibility"] = qwen_evidence["body_visibility"]
     
     # 3. 角度影响
     angle_impact = cred.get("angle_impact", {})
     evidence["angle_impact"] = angle_impact.get("evidence", "角度影响：未知（无法评估）")
     
-    # 如果 Qwen 提供了更具体的角度判断，使用它
-    if qwen_evidence.get("angle_impact"):
+    # 如果 Gemini 3 提供了更具体的角度判断，使用它
+    if isinstance(qwen_evidence, dict) and qwen_evidence.get("angle_impact"):
         evidence["angle_impact"] = qwen_evidence["angle_impact"]
     
     return evidence
@@ -340,7 +343,7 @@ def person_module(
     Args:
         det: 本地检测结果
         cred: 可信度分析结果
-        qwen_result: Qwen VL 分析结果（可选）
+        qwen_result: Gemini 3 分析结果（可选）
     
     Returns:
         人物体征分析结果
@@ -378,6 +381,9 @@ def person_module(
     
     # Qwen 返回了体型相关的 evidence
     qwen_evidence = qwen_person.get("evidence", {})
+    # 确保 qwen_evidence 是字典类型
+    if not isinstance(qwen_evidence, dict):
+        qwen_evidence = {}
     body_vis = qwen_evidence.get("body_visibility", "")
     has_body_visibility = body_vis and "可见" in body_vis and "不可见" not in body_vis
     

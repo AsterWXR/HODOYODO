@@ -4,7 +4,7 @@
   "resource_configuration": "platform/2v-cpu-16g-mem",
   "port": 7860,
   "environment_variables": [
-    {"name": "DASHSCOPE_API_KEY", "value": "sk-8d685168110942009978c8f86c700bbf"},
+    {"name": "OPENROUTER_API_KEY", "value": "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"},
     {"name": "PYTHONUNBUFFERED", "value": "1"}
   ]
 }

@@ -200,9 +200,20 @@ def credibility_module(image_bytes: bytes) -> Dict[str, Any]:
     - blur_score: 模糊度分数
     - angle_impact: 角度影响评估
     """
-    exif = _extract_exif(image_bytes)
-    blur = _blur_score(image_bytes)
-    noise = _noise_estimate(image_bytes)
+    try:
+        exif = _extract_exif(image_bytes)
+    except Exception as e:
+        exif = {"_error": str(e)}
+    
+    try:
+        blur = _blur_score(image_bytes)
+    except Exception as e:
+        blur = -1.0
+    
+    try:
+        noise = _noise_estimate(image_bytes)
+    except Exception as e:
+        noise = -1.0
 
     items = []
     
